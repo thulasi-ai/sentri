@@ -89,6 +89,13 @@ Compare two runs' per-test results side-by-side and highlight tests that flipped
 
 **Files:** `backend/src/routes/runs.js` (new `GET /runs/:runId/compare/:otherRunId`) · `frontend/src/pages/RunDetail.jsx` · new `frontend/src/components/run/RunCompareView.jsx`
 
+### 4 · DIF-005 — Embedded Playwright trace viewer
+**Effort:** M | **Priority:** 🟢 Differentiator | **Dependencies:** none
+
+Copy the Playwright trace viewer build (`@playwright/test/lib/trace/viewer/`) into `public/trace-viewer/` and serve it at `/trace-viewer/`. The Run Detail page links to `/trace-viewer/?trace=<artifact-signed-url>` to open the trace inline in an iframe — eliminating the local-Playwright-install friction users hit today when debugging a failure. Highest-value remaining DIF item with no dependencies.
+
+**Files:** `backend/src/middleware/appSetup.js` · `frontend/src/pages/RunDetail.jsx` · build tooling (copy trace assets on `npm install`)
+
 ---
 
 ## 🔀 Parallel opportunities (small items, no queue conflicts)
