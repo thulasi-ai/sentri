@@ -92,7 +92,7 @@ Per-feature happy paths that aren't part of the Golden journey. Can ship indepen
 | 🧾 Audit Log | `userId` / `userName` per activity | 🟥 |
 | 🔔 Notifications | At-least-one-channel validation | 🟥 |
 | 🔒 Security | IDOR + cross-workspace 403 | 🟥 (UI: outsider hitting another workspace URL → redirect / 403 page) |
-| 🚦 Quality Gates (AUTO-012) | CRUD + evaluator + trigger response | 🟥 |
+| 🚦 Quality Gates (AUTO-012) | Settings panel save + Runs list GateBadge + RunDetail violation panel | ✅ ([`quality-gates-ui.spec.mjs`](./specs/quality-gates-ui.spec.mjs)) |
 | 📑 Reports / PDF | Dashboard PDF export | 🟥 |
 | 🆕 New Project page | SSRF block on private URLs | 🟥 |
 | 📋 Runs list | Filter by status / project | 🟥 |
