@@ -121,6 +121,35 @@ const INTERACTION_KINDS = new Set([
 ]);
 
 /**
+ * DIF-015b Gap 2 — quality-scores a `data-testid` value. Returns `true` when
+ * the value looks machine-generated / random (numeric-only, `el_` / `comp-` /
+ * `t-` prefix + hex tail, or a long unseparated token), in which case
+ * `selectorGenerator()` inside `RECORDER_SCRIPT` demotes the testid below
+ * `role+name` so semantic locators win on pages that only expose a noisy
+ * testid anchor alongside a good aria-label. Still preferred over the bare
+ * CSS fallback so we don't regress pages whose only stable hook is a noisy
+ * testid.
+ *
+ * Defined at module scope (rather than inline inside the template string)
+ * so the same function runs **both** in Node (for unit tests that feed in
+ * fixture values per NEXT.md § Acceptance criteria) and in the browser
+ * (where it's interpolated into `RECORDER_SCRIPT` via `.toString()`). This
+ * mirrors the `TIMINGS` single-source-of-truth pattern above and prevents
+ * drift between the Node-tested heuristic and the in-page implementation.
+ *
+ * @param {string} value - Raw `data-testid` attribute value.
+ * @returns {boolean} `true` when the value looks noisy and should be demoted.
+ */
+export function isNoisyTestId(value) {
+  const v = (value || "").trim();
+  if (!v) return true;
+  if (/^\d+$/.test(v)) return true;
+  if (/^(?:el_|comp-|t-)[a-z0-9_-]*[0-9a-f]{4,}$/i.test(v)) return true;
+  if (v.length > 30 && !/[-_:.]/.test(v)) return true;
+  return false;
+}
+
+/**
  * @typedef {Object} RecordedAction
  * @property {"goto"|"click"|"dblclick"|"rightClick"|"hover"|"fill"|"press"|"select"|"check"|"uncheck"|"upload"|"drag"|"assertVisible"|"assertText"|"assertValue"|"assertUrl"} kind
  * @property {string} [selector]   - Best-effort role/label/text/css selector.
@@ -241,14 +270,11 @@ const RECORDER_SCRIPT = `
     return cssSel + " >> nth=" + idx;
   }
 
-  function isNoisyTestId(value) {
-    const v = (value || "").trim();
-    if (!v) return true;
-    if (/^\d+$/.test(v)) return true;
-    if (/^(?:el_|comp-|t-)[a-z0-9_-]*[0-9a-f]{4,}$/i.test(v)) return true;
-    if (v.length > 30 && !/[-_:.]/.test(v)) return true;
-    return false;
-  }
+  // DIF-015b Gap 2 — interpolated from the Node-side `isNoisyTestId()` export
+  // so the heuristic has a single source of truth across the Node boundary.
+  // Unit tests exercise the Node-side function with fixture values; this
+  // line keeps the in-page copy byte-identical without drift risk.
+  ${isNoisyTestId.toString()}
 
   function selectorGenerator(el) {
     if (!el || el.nodeType !== 1) return "";

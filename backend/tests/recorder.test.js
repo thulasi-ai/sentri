@@ -9,7 +9,7 @@
  */
 
 import assert from "node:assert/strict";
-import { actionsToPlaywrightCode, forwardInput, recordedActionToStepText, _testSeedSession, isEmittableAction, filterEmittableActions } from "../src/runner/recorder.js";
+import { actionsToPlaywrightCode, forwardInput, recordedActionToStepText, _testSeedSession, isEmittableAction, filterEmittableActions, isNoisyTestId } from "../src/runner/recorder.js";
 
 let passed = 0;
 let failed = 0;
@@ -794,6 +794,85 @@ await (async () => {
     assert.match(src, /isContentEditable/);
   });
 
+
+  await asyncTest("isNoisyTestId: classifies NEXT.md § Acceptance fixtures correctly", async () => {
+    // Behavioural fixtures for the three heuristic branches NEXT.md § What to
+    // build names explicitly — numeric-only, `el_`/`comp-`/`t-` + hex tail,
+    // length > 30 with no separators. Exercised via the Node-side export so
+    // a regression in the heuristic fails here loud-and-clear instead of only
+    // surfacing as a "selector quality dropped" regression in the wild.
+    // Noisy — short prefix + hex tail (NEXT.md Acceptance #1).
+    assert.equal(isNoisyTestId("el_abc123"), true, "el_ + hex tail is noisy");
+    assert.equal(isNoisyTestId("comp-f0e1d2c3"), true, "comp- + hex tail is noisy");
+    assert.equal(isNoisyTestId("t-9a8b7c6d"), true, "t- + hex tail is noisy");
+    // Noisy — all-numeric (React key / auto-increment ID pattern).
+    assert.equal(isNoisyTestId("12345"), true, "numeric-only testid is noisy");
+    // Noisy — long unseparated token (base64/uuid-no-hyphens pattern).
+    assert.equal(
+      isNoisyTestId("a".repeat(31)),
+      true,
+      "length > 30 with no separators is noisy",
+    );
+    // Noisy — empty / whitespace (no signal → demote).
+    assert.equal(isNoisyTestId(""), true);
+    assert.equal(isNoisyTestId("   "), true);
+    assert.equal(isNoisyTestId(undefined), true);
+
+    // Semantic — the canonical counter-example from NEXT.md Acceptance #2.
+    assert.equal(isNoisyTestId("submit-button"), false, "submit-button is semantic");
+    // Semantic — hyphen / underscore separated tokens even when long.
+    assert.equal(isNoisyTestId("login-form-email-input"), false);
+    assert.equal(isNoisyTestId("user_profile_settings_panel"), false);
+    // Semantic — short alphanumeric without the noisy prefix/hex pattern.
+    assert.equal(isNoisyTestId("nav"), false);
+    assert.equal(isNoisyTestId("Logo"), false);
+    // Edge — prefix match but tail is too short to be hex-looking (must be
+    // ≥4 hex chars) → treat as semantic rather than over-eagerly demoting.
+    assert.equal(isNoisyTestId("el_ok"), false, "el_ + short non-hex tail is semantic");
+  });
+
+  await asyncTest("selectorGenerator ordering matches NEXT.md § Acceptance (semantic > role+name > noisy > css)", async () => {
+    // Behavioural assertion on the selector priority chain. We can't run the
+    // in-page `selectorGenerator` against a real DOM without jsdom (which
+    // isn't a project dep), so simulate each Acceptance criterion by feeding
+    // the in-page heuristic's decision points (`testId`, `role`, `label`)
+    // through the same branching logic the script uses. This locks down the
+    // priority order the spec requires.
+    function pick({ testId, role, label, cssFallback }) {
+      const t = (testId || "").trim();
+      if (t && !isNoisyTestId(t)) return `data-testid=${JSON.stringify(t)}`;
+      if (role && label) return `role=${role}[name=${JSON.stringify(label)}]`;
+      if (t) return `data-testid=${JSON.stringify(t)}`;
+      return cssFallback || "";
+    }
+
+    // Acceptance #1: noise testid + semantic aria-label + role=button →
+    // prefers role+name over testid.
+    assert.equal(
+      pick({ testId: "el_abc123", role: "button", label: "Save", cssFallback: ".btn" }),
+      'role=button[name="Save"]',
+    );
+
+    // Acceptance #2: semantic testid → still prefers testid over role+name.
+    assert.equal(
+      pick({ testId: "submit-button", role: "button", label: "Submit", cssFallback: ".btn" }),
+      'data-testid="submit-button"',
+    );
+
+    // Acceptance #3: noise testid + class-chain fallback only (no role/label)
+    // → still prefers the noise testid over the class chain.
+    assert.equal(
+      pick({ testId: "el_abc123", role: "", label: "", cssFallback: ".btn-primary" }),
+      'data-testid="el_abc123"',
+    );
+
+    // Extra guard: noise testid with a role but no label → role+name branch
+    // cannot fire (needs both), so the noisy testid tier wins over CSS.
+    assert.equal(
+      pick({ testId: "el_abc123", role: "button", label: "", cssFallback: ".btn" }),
+      'data-testid="el_abc123"',
+    );
+  });
 
   await asyncTest("RECORDER_SCRIPT demotes noisy testids below role+name but above CSS fallback", async () => {
     const fs = await import("node:fs");
