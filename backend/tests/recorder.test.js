@@ -895,10 +895,14 @@ await (async () => {
     assert.ok(pwIdx >= 0, "selectorGenerator must consult window.__playwrightSelector first");
 
     // Fallback path heuristics still present (they run when the
-    // Playwright bundle could not be loaded).
-    assert.match(scriptBody, /\/\^\\d\+\$\/\.test\(v\)/, "all-numeric testid heuristic must exist in fallback");
-    assert.match(scriptBody, /\/\^\(\?:el_\|comp-\|t-\)\[a-z0-9_\-\]\*\[0-9a-f\]\{4,\}\$\/i/);
-    assert.match(scriptBody, /v\.length\s*>\s*30\s*&&\s*!\/\[-_:\.\]\/\.test\(v\)/);
+    // Playwright bundle could not be loaded). `isNoisyTestId` is defined
+    // at module scope and interpolated into RECORDER_SCRIPT via
+    // `${isNoisyTestId.toString()}`, so the regex literals live in the
+    // module source rather than in the template body — assert against
+    // `src`, not `scriptBody`.
+    assert.match(src, /\/\^\\d\+\$\/\.test\(v\)/, "all-numeric testid heuristic must exist in fallback");
+    assert.match(src, /\/\^\(\?:el_\|comp-\|t-\)\[a-z0-9_\-\]\*\[0-9a-f\]\{4,\}\$\/i/);
+    assert.match(src, /v\.length\s*>\s*30\s*&&\s*!\/\[-_:\.\]\/\.test\(v\)/);
 
     // Fallback ordering still semantic > role+name > noisy > css.
     const semanticIdx = scriptBody.indexOf("if (testId && !isNoisyTestId(testId))");
