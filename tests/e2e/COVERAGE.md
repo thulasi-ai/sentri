@@ -41,18 +41,18 @@ Why these five: each closes a UI gap exposed by the current API-only rows in the
 
 | QA.md ref | Step / flow | Spec | Status |
 |---|---|---|---|
-| §1 step 1–3 | Auth — register & verify (email link) | UI: — · scaffolding: `api-auth.spec.mjs` :: *register creates user and login is blocked until verification* | 🟥 (UI: `/register` form → verify-email link click → `/login` success → `/dashboard`) |
-| §1 step 1–3 | Auth — wrong-password rejection | UI: `ui-smoke.spec.mjs` :: *invalid credentials show an error state* · scaffolding: `api-auth.spec.mjs` :: *login negative path with bad password* | ✅ |
-| §2 step 4 | Workspace — invite collaborator | — | 🟥 (UI: Settings → Members invite form + accept-link incognito flow) |
-| §3 step 5 | Project — create | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *verify account, login, project+test CRUD happy path* | 🟥 (UI: `/projects/new` form → redirect to `/projects/:id` → project visible in list) |
-| §4 step 6 | Crawl — link mode | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: ProjectDetail → CrawlProjectModal → live progress → completed badge) |
-| §4 step 7 | Crawl — state exploration | — | 🟥 (UI: CrawlProjectModal mode selector + state-explorer progress) |
-| §5 step 8–9 | Generate — AI test draft creation | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: Tests page → GenerateTestModal → Draft test row appears) |
-| §6 step 10–12 | Recorder — start/stop session | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: Tests page → RecorderModal → forward canvas events → Stop & Save → Draft test) |
-| §7 step 13–15 | Review — approve / reject test | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: Tests page filter pills + bulk approve toolbar + ReviewModal) |
-| §8 step 16–19 | Edit — Steps ↔ Source diff/preview | — | 🟥 (UI: TestDetail Steps↔Source toggle + diff modal + accept/discard) |
-| §9 step 20–22 | Run — execute regression | — | 🟥 (UI: RunRegressionModal → live RunDetail SSE log + per-test status badges) |
-| §10 step 23–26 | AI Fix — manual flow | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: TestDetail "Fix with AI" → SSE stream renders → Accept → re-approve) |
+| Sec 1, steps 1-3 | Auth - register & verify (email link) | UI: — · scaffolding: `api-auth.spec.mjs` :: *register creates user and login is blocked until verification* | 🟥 (UI: `/register` form → verify-email link click → `/login` success → `/dashboard`) |
+| Sec 1, steps 1-3 | Auth — wrong-password rejection | UI: `ui-smoke.spec.mjs` :: *invalid credentials show an error state* · scaffolding: `api-auth.spec.mjs` :: *login negative path with bad password* | ✅ |
+| Sec 2, step 4 | Workspace — invite collaborator | — | 🟥 (UI: Settings → Members invite form + accept-link incognito flow) |
+| Sec 3, step 5 | Project — create | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *verify account, login, project+test CRUD happy path* | 🟥 (UI: `/projects/new` form → redirect to `/projects/:id` → project visible in list) |
+| Sec 4, step 6 | Crawl — link mode | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: ProjectDetail → CrawlProjectModal → live progress → completed badge) |
+| Sec 4, step 7 | Crawl — state exploration | — | 🟥 (UI: CrawlProjectModal mode selector + state-explorer progress) |
+| Sec 5, steps 8-9 | Generate — AI test draft creation | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: Tests page → GenerateTestModal → Draft test row appears) |
+| Sec 6, steps 10-12 | Recorder — start/stop session | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: Tests page → RecorderModal → forward canvas events → Stop & Save → Draft test) |
+| Sec 7, steps 13-15 | Review — approve / reject test | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: Tests page filter pills + bulk approve toolbar + ReviewModal) |
+| Sec 8, steps 16-19 | Edit — Steps ↔ Source diff/preview | — | 🟥 (UI: TestDetail Steps↔Source toggle + diff modal + accept/discard) |
+| Sec 9, steps 20-22 | Run — execute regression | — | 🟥 (UI: RunRegressionModal → live RunDetail SSE log + per-test status badges) |
+| Sec 10, steps 23-26 | AI Fix — manual flow | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: TestDetail "Fix with AI" → SSE stream renders → Accept → re-approve) |
 | §11 step 27–29 | Visual baseline — first run + accept | — | 🟥 (UI: RunDetail Visual tab → diff PNG visible → "Accept visual changes" button) |
 | §12 step 30–34 | Run results / artifacts / reports | — | 🟥 (UI: RunDetail artifact downloads + `/reports` page renders + Dashboard PDF export) |
 | §13 step 35 | Notifications — Teams/email/webhook fire | — | ⏭️ (Outbound side-effects — no user-facing UI; covered by `notifications-api.test.js` unit tests) |
