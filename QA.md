@@ -664,11 +664,22 @@ Each area uses this format:
 18. As `qa_lead` and `admin`, all three (GET / PATCH / DELETE) succeed.
 19. Cross-workspace isolation — outsider hitting another workspace's project → 404 (workspace scope enforced upstream by `workspaceScope` middleware).
 
+**UI surfaces (AUTO-012b):**
+20. ProjectDetail → **Settings** tab → "Quality Gates" panel renders. As `qa_lead`/`admin`, the form is editable; as `viewer`, fields are disabled and a "Read-only" hint shows.
+21. Configure thresholds and click **Save** → toast "Quality gates saved"; reload tab → values persist.
+22. Click **Clear all** → confirmation prompt → on confirm, gates removed; toast "Quality gates cleared"; subsequent runs report `gateResult: null`.
+23. Enter all-blank fields and click Save → server-side `DELETE` is sent (config cleared) instead of saving an empty object — toast reads "Quality gates cleared".
+24. Validation: enter `minPassRate: 150` → server returns 400; the form surfaces the error message inline (red banner) and does not corrupt local state.
+25. Runs list (`/runs`) on a test run that has `gateResult` → green "Gates ✓" or red "Gates ✗" pill renders next to the status badge. Hover → tooltip lists violations.
+26. Project Detail → **Runs** tab → same gate badge appears in the per-row status cell.
+27. RunDetail header → gate badge appears next to the browser badge when `gateResult` is present. When gates failed, an inline red violation panel renders before the main content listing each `{ rule, threshold, actual }` entry.
+28. Test runs created before AUTO-012 shipped (with `gateResult: null`) → no badge, no panel — UI must not regress for legacy runs.
+
 **Negative / edge:**
 - PATCH against a non-existent project ID → 404 "not found".
 - Persisted JSON survives backend restart (column is `TEXT` JSON in migration `014_quality_gates.sql`).
-- Pre-existing runs created before AUTO-012 shipped still load and render correctly with `gateResult: null`.
-- Frontend Project Detail panel + per-run pass/fail badge are tracked as **AUTO-012b** (carry-over) — do not test them in this build; once AUTO-012b ships, add UI verification steps here.
+- Pre-existing runs created before AUTO-012 shipped still load and render correctly with `gateResult: null` (no badge / no panel).
+- Crawl and generate runs never carry `gateResult` even when configured (gates apply to test runs only) — verify badge / panel are suppressed in those views.
 
 ---
 

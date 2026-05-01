@@ -68,29 +68,18 @@
 
 ## 🔁 Follow-ups — carry-over from shipped PRs
 
-### AUTO-012b — Quality Gates UI panel + GitHub Action exit code
-**Effort:** S | **Priority:** 🟡 High | **Dependencies:** AUTO-012 ✅ (PR #2)
+### AUTO-012c — GitHub Action gate exit-code example
+**Effort:** XS | **Priority:** 🔵 Medium | **Dependencies:** AUTO-012 + AUTO-012b ✅ (PR #2)
 
-Backend of AUTO-012 shipped in PR #2. The frontend + CI slice was split off so the next backend PR isn't gated on UI review:
+UI panel and per-run gate badge shipped in PR #2 alongside the backend. The remaining slice is CI-consumer-side only: a copy-pasteable `.github/workflows/` snippet or `docs/` example that polls the trigger status endpoint, reads `gateResult.passed`, and exits non-zero on violation. Backend already returns `gateResult` in both the trigger status response and the callback payload — this is documentation, not new code.
 
-- `frontend/src/pages/ProjectDetail.jsx` — Quality Gates configuration panel (`minPassRate` / `maxFlakyPct` / `maxFailures` form; PATCH/DELETE via a new `api.updateQualityGates()` helper).
-- `frontend/src/pages/Runs.jsx` · `frontend/src/pages/RunDetail.jsx` — gate pass/fail badge driven by `run.gateResult`.
-- GitHub Action example (`docs/` snippet or `.github/workflows/` template) that reads `gateResult.passed` from the trigger poll response and exits non-zero on violation. The backend already returns `gateResult` in both the callback payload and the trigger status response — this wiring is CI-consumer-side only.
-
-**Files:** `frontend/src/pages/ProjectDetail.jsx` · `frontend/src/pages/Runs.jsx` · `frontend/src/pages/RunDetail.jsx` · `frontend/src/api.js` · `docs/` or `.github/workflows/` CI example.
+**Files:** `docs/guide/ci-cd.md` (new section) or `.github/workflows/sentri-quality-gate.example.yml`.
 
 ---
 
 ## ⏭ Queue (next 3 PRs after current)
 
-### 2 · AUTO-012b — Quality Gates UI + GitHub Action exit code
-**Effort:** S | **Priority:** 🟡 High | **Dependencies:** AUTO-012 ✅ (PR #2)
-
-See Follow-ups section above for scope. Should be picked up alongside the current PR if a second agent has bandwidth — zero file overlap (frontend + docs only).
-
-**Files:** `frontend/src/pages/ProjectDetail.jsx` · `frontend/src/pages/Runs.jsx` · `frontend/src/pages/RunDetail.jsx` · `frontend/src/api.js`
-
-### 3 · AUTO-017 — Performance budget testing (Web Vitals)
+### 2 · AUTO-017 — Performance budget testing (Web Vitals)
 **Effort:** M | **Priority:** 🔵 Medium | **Dependencies:** none
 
 Capture Web Vitals (LCP, CLS, INP, TTFB) per page during runs and compare against per-project budgets. Surface budget violations as a new run-result section and gate runs when budgets are exceeded. First post-launch differentiator candidate.
