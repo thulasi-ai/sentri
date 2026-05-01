@@ -24,6 +24,7 @@
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { getDatabase, closeDatabase } from "./database/sqlite.js";
 import { migrateFromJsonIfNeeded } from "./database/migrate.js";
 import * as runRepo from "./database/repositories/runRepo.js";
@@ -69,7 +70,16 @@ dotenv.config();
 function warnIfEphemeralStorage() {
   if (process.env.DATABASE_URL) return;
 
-  const rawDbPath = process.env.DB_PATH || path.join(process.cwd(), "backend", "data", "sentri.db");
+  // Derive the default DB path relative to this file so it matches the SQLite
+  // adapter's own default (`backend/src/database/adapters/sqlite-adapter.js`).
+  // Using process.cwd() here would produce `<cwd>/backend/data/...` in Docker
+  // (WORKDIR /app → /app/backend/data vs the adapter's /app/data) and
+  // `backend/backend/data/...` in local dev (`cd backend && npm run dev`),
+  // triggering the warning as a false positive and writing the boot marker to
+  // the wrong directory.
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const rawDbPath = process.env.DB_PATH || path.join(__dirname, "..", "data", "sentri.db");
   const dbPath = path.resolve(rawDbPath);
   const markerPath = `${dbPath}.boot-marker`;
   const isTmpPath = dbPath.startsWith("/tmp/") || dbPath === "/tmp";
