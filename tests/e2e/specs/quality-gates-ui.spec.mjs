@@ -2,60 +2,62 @@ import { test, expect } from '../utils/playwright.mjs';
 import { isReachable } from '../utils/environment.mjs';
 
 /**
- * UI E2E coverage for AUTO-012 Quality Gates.
+ * UI E2E coverage for AUTO-012 Quality Gates — Settings panel save round-trip.
  *
- * Drives the browser through:
- *   1. ProjectDetail → Settings tab → QualityGatesPanel save round-trip
- *   2. Runs list → GateBadge renders for a run with gateResult
- *   3. RunDetail → inline violation panel renders when gateResult.passed === false
+ * Drives the browser through ProjectDetail → Settings → QualityGatesPanel, fills
+ * `minPassRate`, clicks Save, asserts the success toast, reloads, and confirms
+ * the value persisted — all via rendered DOM (no API read-back), per
+ * `tests/e2e/COVERAGE.md` § UI-only policy.
  *
- * API calls in `beforeAll` are scaffolding only (register + seed project + run
- * with a failing gateResult) — every ✅ assertion is `expect(page.…)` against
- * the rendered DOM, per `tests/e2e/COVERAGE.md` § UI-only policy.
+ * NOTE: The Runs-list `GateBadge` and RunDetail violation-panel flows are
+ * deliberately **not** covered here — they require a persisted run with
+ * `gateResult.passed === false`, which can only be produced by a real test run
+ * (no test-only seeding endpoint exists). Those rows stay 🟥 on COVERAGE.md
+ * until either a seeding helper is added or the spec is extended to drive a
+ * full crawl → approve → run flow end-to-end.
+ *
+ * API calls in `beforeAll` are scaffolding only (register + login + create
+ * project) so the UI test can jump straight to the Settings panel.
  */
-test.describe('Quality Gates UI (AUTO-012)', () => {
+test.describe('Quality Gates UI (AUTO-012) — Settings panel', () => {
   test.skip(process.env.RUN_UI_E2E !== 'true', 'Set RUN_UI_E2E=true to run browser UI coverage.');
 
   let projectId;
-  let runId;
-  let cookieHeader;
+  let email;
+  const password = 'Password123!';
 
   test.beforeAll(async ({ request, baseURL }) => {
     const ok = await isReachable(`${baseURL}/login`);
     if (!ok) return;
 
-    const email = `qa-gates-${Date.now()}@example.com`;
-    const password = 'Password123!';
+    email = `qa-gates-${Date.now()}@example.com`;
 
-    // Scaffolding: register a verified user + project via API so the UI test
-    // can jump straight to the Settings panel.
+    // Scaffolding: register + login + create project via API.
     await request.post('/api/auth/register', { data: { name: 'QA', email, password } });
-    const login = await request.post('/api/auth/login', { data: { email, password } });
-    cookieHeader = login.headers()['set-cookie'] || '';
+    await request.post('/api/auth/login', { data: { email, password } });
 
     const project = await request.post('/api/v1/projects', {
       data: { name: 'Gates Project', url: 'https://example.com' },
     });
     if (project.ok()) projectId = (await project.json()).id;
-
-    // Seed a failing run directly so RunDetail has a gateResult to render.
-    // (Production flow goes through testRunner; for UI coverage we just need
-    // a persisted row with `gateResult.passed === false`.)
-    if (projectId) {
-      const seed = await request.post(`/api/v1/projects/${projectId}/__seed-run`, {
-        data: { gateResult: { passed: false, violations: [{ rule: 'minPassRate', threshold: 95, actual: 90 }] } },
-      }).catch(() => null);
-      if (seed?.ok()) runId = (await seed.json()).id;
-    }
   });
 
-  test('Settings → Quality Gates panel saves and persists', async ({ page, baseURL }) => {
+  test('Settings → Quality Gates panel saves and persists minPassRate', async ({ page, baseURL }) => {
     test.skip(!projectId, 'API scaffolding unavailable.');
     const ok = await isReachable(`${baseURL}/login`);
     test.skip(!ok, 'Frontend not reachable.');
 
+    // Log in through the UI so cookies are set on the browser context.
+    await page.goto('/login');
+    await page.getByRole('textbox', { name: /email/i }).fill(email);
+    await page.getByRole('textbox', { name: /password/i }).fill(password);
+    await page.getByRole('button', { name: /login|sign in/i }).first().click();
+
     await page.goto(`/projects/${projectId}`);
-    await page.getByRole('tab', { name: /settings/i }).click();
+
+    // Tabs render as <button class="pd-tab"> (see ProjectDetail.jsx:361) —
+    // use `getByRole('button', …)` rather than `role=tab`.
+    await page.getByRole('button', { name: /^settings$/i }).click();
 
     await expect(page.getByRole('heading', { name: /quality gates/i })).toBeVisible();
     await page.getByLabel(/min pass rate/i).fill('95');
@@ -63,24 +65,10 @@ test.describe('Quality Gates UI (AUTO-012)', () => {
 
     await expect(page.getByText(/quality gates saved/i)).toBeVisible();
 
+    // Reload and verify persistence through the GET round-trip.
     await page.reload();
-    await page.getByRole('tab', { name: /settings/i }).click();
+    await page.getByRole('button', { name: /^settings$/i }).click();
     await expect(page.getByLabel(/min pass rate/i)).toHaveValue('95');
-    await expect(page.getByText(/active/i).first()).toBeVisible();
-  });
-
-  test('Runs list shows the GateBadge for failing gates', async ({ page }) => {
-    test.skip(!runId, 'Seed run unavailable.');
-    await page.goto('/runs');
-    await expect(page.getByText(/Gates ✗/).first()).toBeVisible();
-  });
-
-  test('RunDetail renders the violation panel', async ({ page }) => {
-    test.skip(!runId, 'Seed run unavailable.');
-    await page.goto(`/runs/${runId}`);
-
-    await expect(page.getByText(/quality gate failed/i)).toBeVisible();
-    await expect(page.getByText(/minPassRate/)).toBeVisible();
-    await expect(page.getByText(/threshold.*95/i)).toBeVisible();
+    await expect(page.getByText(/^active$/i).first()).toBeVisible();
   });
 });
