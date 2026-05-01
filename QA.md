@@ -353,7 +353,7 @@ Each area uses this format:
 
 ### 🔐 Authentication
 
-_(automated: see `tests/e2e/specs/ui-smoke.spec.mjs` for login negative path + verified login redirect to `/dashboard`; coverage tracked in `tests/e2e/COVERAGE.md` Golden rows for Sec 1 wrong-password; verified-login happy path remains pending until CI turns that row ✅.)_
+_(automated: see `tests/e2e/specs/ui-smoke.spec.mjs` for login negative path + verified login redirect to `/dashboard`, and `tests/e2e/specs/project-create-ui.spec.mjs` for §3 step 5 (project create via `/projects/new` form). Coverage tracked in `tests/e2e/COVERAGE.md`; verified-login happy path remains pending until CI turns that row ✅.)_
 
 **Preconditions:** Logged out, fresh incognito window.
 
