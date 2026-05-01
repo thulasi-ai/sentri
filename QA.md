@@ -631,6 +631,47 @@ Each area uses this format:
 
 ---
 
+### 🚦 Quality Gates (AUTO-012)
+
+**Preconditions:** Project with ≥ 5 approved tests; `qa_lead` or `admin` logged in. Endpoints documented in `backend/src/routes/projects.js` and `backend/src/middleware/permissions.json`.
+
+**CRUD flow:**
+1. `GET /api/v1/projects/:id/quality-gates` (any workspace member, viewer+) → returns `{ qualityGates: null }` for an unconfigured project.
+2. `PATCH /api/v1/projects/:id/quality-gates` with `{ minPassRate: 95 }` (`qa_lead` or `admin`) → returns `{ qualityGates: { minPassRate: 95 } }`. Reload + GET → value persists across requests.
+3. PATCH `{ minPassRate: 80, maxFlakyPct: 10, maxFailures: 2 }` → all three fields persist together.
+4. `DELETE /api/v1/projects/:id/quality-gates` (`qa_lead` or `admin`) → returns `{ ok: true, qualityGates: null }`; subsequent GET returns null again.
+
+**Validation (each must return 400):**
+5. `minPassRate: 150` (out of 0–100 range) → 400 "minPassRate must be between 0 and 100".
+6. `maxFlakyPct: -1` → 400 "maxFlakyPct must be between 0 and 100".
+7. `maxFailures: 1.5` (non-integer) or `maxFailures: -1` → 400 "maxFailures must be a non-negative integer".
+8. PATCH with array body or non-object → 400 "qualityGates must be an object".
+
+**Run-time evaluation** (`backend/src/testRunner.js` `evaluateQualityGates`):
+9. Configure `{ minPassRate: 95 }`. Trigger a run that finishes 9/10 passed (90%) → `run.gateResult = { passed: false, violations: [{ rule: "minPassRate", threshold: 95, actual: 90 }] }`.
+10. Configure `{ maxFailures: 2 }` and finish a run with 3 failures → violation rule `maxFailures`, `actual: 3`.
+11. Configure `{ maxFlakyPct: 5 }` and finish a run where `retryCount / total * 100 > 5` → violation rule `maxFlakyPct`.
+12. All gates passing → `run.gateResult = { passed: true, violations: [] }`.
+13. Project with **no** gates configured → `run.gateResult` is `null` (legacy / pre-AUTO-012 runs are unaffected; CI consumers must treat null as "no gate").
+
+**CI/CD trigger integration** (`backend/src/routes/trigger.js`):
+14. Trigger a run via `POST /api/v1/projects/:id/trigger` with a Bearer token, then poll `GET /api/v1/projects/:id/trigger/runs/:runId` → response includes top-level `gateResult` matching what's persisted on the run.
+15. Provide `callbackUrl` on the trigger call → callback POST payload contains `gateResult: { passed, violations }` or `null`.
+16. Confirm `gateResult` is included regardless of run status (`completed` / `failed` / `aborted`) when gates are configured; `null` otherwise.
+
+**Permissions:**
+17. As `viewer`, `PATCH` and `DELETE` quality-gates endpoints → **403** (not 200, not silent no-op). `GET` is allowed.
+18. As `qa_lead` and `admin`, all three (GET / PATCH / DELETE) succeed.
+19. Cross-workspace isolation — outsider hitting another workspace's project → 404 (workspace scope enforced upstream by `workspaceScope` middleware).
+
+**Negative / edge:**
+- PATCH against a non-existent project ID → 404 "not found".
+- Persisted JSON survives backend restart (column is `TEXT` JSON in migration `014_quality_gates.sql`).
+- Pre-existing runs created before AUTO-012 shipped still load and render correctly with `gateResult: null`.
+- Frontend Project Detail panel + per-run pass/fail badge are tracked as **AUTO-012b** (carry-over) — do not test them in this build; once AUTO-012b ships, add UI verification steps here.
+
+---
+
 ### 🖼️ Visual Testing
 
 **Preconditions:** Test with screenshot steps exists.
@@ -1154,6 +1195,7 @@ Mark status per browser: ✅ pass · ❌ fail · ⚠️ partial · ⬜ not teste
 | **AI Fix (manual + auto feedback loop)** | ⬜ | ⬜ | ⬜ | ⬜ | |
 | **Test Code Editing (Steps ↔ Source)** | ⬜ | ⬜ | ⬜ | ⬜ | |
 | Automation (trigger tokens + schedules) | ⬜ | ⬜ | ⬜ | ⬜ | |
+| **Quality Gates (AUTO-012 — CRUD, evaluator, trigger response)** | ⬜ | ⬜ | ⬜ | ⬜ | |
 | Visual Testing | ⬜ | ⬜ | ⬜ | ⬜ | |
 | Dashboard | ⬜ | ⬜ | ⬜ | ⬜ | |
 | AI Chat + Chat History | ⬜ | ⬜ | ⬜ | ⬜ | |
