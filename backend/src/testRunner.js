@@ -52,7 +52,20 @@ function evaluateQualityGates(gates, run) {
   const failed = Number(run.failed || 0);
   const passed = Number(run.passed || 0);
   const passRate = total > 0 ? (passed / total) * 100 : 100;
-  const flakyPct = total > 0 ? ((run.retryCount || 0) / total) * 100 : 0;
+
+  // `flakyPct` = % of tests that needed at least one retry, NOT the sum of
+  // retries across the suite. Using `run.retryCount` directly (sum of per-test
+  // retries — see line ~340 below) would let a single 3×-retried test push
+  // flakyPct above 100% on a 1-test run, which is both nonsensical and
+  // unreachable given `maxFlakyPct` is range-validated to 0–100 server-side
+  // (`backend/src/routes/projects.js`). Counting flaky *tests* instead matches
+  // the user-facing meaning and stays bounded in [0, 100]. Falls back to
+  // counting per-result retryCount > 0 when run.results is available; uses 0
+  // when results aren't populated yet (e.g. aborted runs).
+  const flakyTests = Array.isArray(run.results)
+    ? run.results.filter((r) => Number(r?.retryCount || 0) > 0).length
+    : 0;
+  const flakyPct = total > 0 ? (flakyTests / total) * 100 : 0;
 
   if (Number.isFinite(gates.minPassRate) && passRate < gates.minPassRate) {
     violations.push({ rule: "minPassRate", threshold: gates.minPassRate, actual: Number(passRate.toFixed(2)) });

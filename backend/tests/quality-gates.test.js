@@ -60,12 +60,37 @@ async function main() {
       assert.equal(__evaluateQualityGatesForTest(null, { total: 5, passed: 0, failed: 5 }), null);
 
       // All gates passing → passed: true
+      // `flakyPct` is computed from `run.results[].retryCount > 0`, so we
+      // pass a results array here rather than the run-level `retryCount` sum.
       const ok = __evaluateQualityGatesForTest(
         { minPassRate: 80, maxFailures: 2, maxFlakyPct: 50 },
-        { total: 10, passed: 9, failed: 1, retryCount: 1 },
+        {
+          total: 10,
+          passed: 9,
+          failed: 1,
+          results: [
+            { retryCount: 1 }, // 1 flaky test of 10 = 10% flaky, under 50% threshold
+            ...Array.from({ length: 9 }, () => ({ retryCount: 0 })),
+          ],
+        },
       );
       assert.equal(ok.passed, true);
       assert.equal(ok.violations.length, 0);
+
+      // Flaky % is bounded — a single test retried many times must NOT push
+      // flakyPct above 100% (regression for the sum-of-retries bug).
+      const bounded = __evaluateQualityGatesForTest(
+        { maxFlakyPct: 99 },
+        {
+          total: 1,
+          passed: 1,
+          failed: 0,
+          results: [{ retryCount: 5 }], // 1 flaky test of 1 → 100% flaky
+        },
+      );
+      assert.equal(bounded.violations.length, 1, "1 flaky test of 1 → 100% flaky, exceeds 99% threshold");
+      assert.equal(bounded.violations[0].rule, "maxFlakyPct");
+      assert.equal(bounded.violations[0].actual, 100, "flakyPct must be bounded at 100, not 500");
     } else {
       console.warn("  ⚠️  __evaluateQualityGatesForTest not exported — evaluator branch skipped");
     }
