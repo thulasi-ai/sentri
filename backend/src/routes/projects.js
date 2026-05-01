@@ -58,6 +58,13 @@ function validateQualityGates(payload) {
     if (!Number.isInteger(payload.maxFailures) || payload.maxFailures < 0) return "maxFailures must be a non-negative integer";
     gates.maxFailures = payload.maxFailures;
   }
+  // Reject empty payloads — without at least one gate field, the stored
+  // `{}` would render as "Active" in the UI and cause the evaluator to
+  // return `{ passed: true }` for every run despite no thresholds being
+  // configured. Clients clearing all gates should use DELETE instead.
+  if (Object.keys(gates).length === 0) {
+    return "qualityGates must contain at least one gate field (minPassRate, maxFlakyPct, maxFailures)";
+  }
   return gates;
 }
 
