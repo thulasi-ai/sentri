@@ -67,6 +67,11 @@ function evaluateQualityGates(gates, run) {
   return { passed: violations.length === 0, violations };
 }
 
+// Exported under a name-mangled alias so integration tests can exercise the
+// pure evaluator without pulling in the full runner surface. Not part of the
+// public module contract — callers outside tests should rely on run.gateResult.
+export { evaluateQualityGates as __evaluateQualityGatesForTest };
+
 // ── Concurrency helper ────────────────────────────────────────────────────────
 // Lightweight promise pool — no external dependencies. Runs `fn` for each item
 // in `items` with at most `concurrency` in-flight at once. Results are returned
