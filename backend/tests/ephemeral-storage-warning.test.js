@@ -13,7 +13,6 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { warnIfEphemeralStorage } from "../src/utils/ephemeralStorage.js";
@@ -36,9 +35,18 @@ function test(name, fn) {
 /**
  * Create a fresh temp directory for an isolated DB path. Caller is responsible
  * for cleanup via the returned `cleanup()` function.
+ *
+ * NOTE: we deliberately avoid `os.tmpdir()` here because on Linux it resolves
+ * to `/tmp`, which would trip `warnIfEphemeralStorage()`'s `isTmpPath` branch
+ * and force the warning regardless of marker state. Tests that need the
+ * `/tmp` branch explicitly construct a `/tmp`-prefixed path of their own.
  */
 function makeTempDbDir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sentri-eph-"));
+  // Use a path under cwd (the test runner sets cwd to `backend/`) rather than
+  // `os.tmpdir()` so the path doesn't start with `/tmp` and trip isTmpPath.
+  const base = path.join(process.cwd(), ".test-tmp", "ephemeral-storage");
+  fs.mkdirSync(base, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(base, "case-"));
   const dbPath = path.join(dir, "sentri.db");
   return {
     dir,
