@@ -93,6 +93,11 @@ export function loadPlaywrightInjectedScriptSource() {
           cached = { source, available: true };
           return cached;
         }
+        // File resolved but empty (corrupted / partial install). Record
+        // a failure object so the post-loop guard below doesn't fall
+        // through with `cached === null` — that previously crashed
+        // `buildInjectedBootstrapScript()` when it destructured `null`.
+        cached = { source: null, available: false, reason: `${rel} resolved but file was empty` };
       } catch (err) {
         // Try the next candidate; last error is reported if all fail.
         cached = { source: null, available: false, reason: err.message };
@@ -100,6 +105,14 @@ export function loadPlaywrightInjectedScriptSource() {
     }
   } catch (err) {
     cached = { source: null, available: false, reason: err.message };
+  }
+
+  // Defence-in-depth: if every code path above somehow left `cached`
+  // unset (no candidates configured, etc.), still return a well-formed
+  // failure object so callers can rely on the `{ available, source }`
+  // shape unconditionally.
+  if (!cached) {
+    cached = { source: null, available: false, reason: "no candidate paths produced a usable bundle" };
   }
 
   if (!loggedOnce) {
