@@ -279,7 +279,7 @@ const RECORDER_SCRIPT = `
     if (!el || el.nodeType !== 1) return "";
     // Primary path: delegate to Playwright's own InjectedScript-based
     // selector generator when its bootstrap script ran successfully. This
-    // is the same algorithm Playwright's `codegen` tool produces and
+    // is the same algorithm Playwright's \`codegen\` tool produces and
     // covers ancestor scoring, noise-testid demotion, shadow-DOM
     // traversal, and iframe locator chains — none of which the fallback
     // below handles. If Playwright returns an empty string we fall
