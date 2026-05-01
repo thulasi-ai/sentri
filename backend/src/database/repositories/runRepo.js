@@ -89,6 +89,7 @@ const LEAN_COLS = [
   "pagesFound", "parallelWorkers", "currentStep", "rateLimitError",
   "browser", // DIF-002 — surfaces browser badge on runs list without a second query
   "networkCondition", // AUTO-006 — surfaces network-condition badge on runs list without a second query
+  "gateResult", // AUTO-012 — surfaces gate badge on runs list without a second query
 ].join(", ");
 
 const LEAN_WITH_FEEDBACK_COLS = `${LEAN_COLS}, feedbackLoop, pipelineStats`;
@@ -109,6 +110,16 @@ function parseLeanJson(row) {
     try { row.pipelineStats = JSON.parse(row.pipelineStats); } catch { row.pipelineStats = null; }
   } else {
     row.pipelineStats = null;
+  }
+  // AUTO-012: gateResult is a small JSON object ({ passed, violations[] }) stored
+  // in the lean column set so the Runs list / ProjectDetail Runs tab can render
+  // <GateBadge> without a second query. Parse here when present.
+  if ("gateResult" in row) {
+    if (row.gateResult) {
+      try { row.gateResult = JSON.parse(row.gateResult); } catch { row.gateResult = null; }
+    } else {
+      row.gateResult = null;
+    }
   }
   return row;
 }

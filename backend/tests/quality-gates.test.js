@@ -1,12 +1,27 @@
 import assert from "node:assert/strict";
+import authRouter, { requireAuth } from "../src/routes/auth.js";
+import projectsRouter from "../src/routes/projects.js";
 import { createTestContext } from "./helpers/test-base.js";
 
 const t = createTestContext();
+const { app, workspaceScope } = t;
+
+let mounted = false;
+function mountRoutesOnce() {
+  if (mounted) return;
+  // Mount auth at /api/auth (for test-base.js `registerAndLogin` helper) and
+  // projects at the versioned /api/v1 path (the one the quality-gates routes
+  // live under).
+  app.use("/api/auth", authRouter);
+  app.use("/api/v1/projects", requireAuth, workspaceScope, projectsRouter);
+  mounted = true;
+}
 
 async function main() {
+  mountRoutesOnce();
   t.resetDb();
   const env = t.setupEnv({ SKIP_EMAIL_VERIFICATION: "true" });
-  const server = t.app.listen(0);
+  const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     const { token } = await t.registerAndLogin(base, {
