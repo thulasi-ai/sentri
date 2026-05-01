@@ -6,23 +6,20 @@
 >
 > **For humans:** when shipping a user-facing feature, add at least one ✅ row here in the same PR (per `REVIEW.md` § Mandatory Test Requirements). The backfill queue itself is tracked as `MNT-012 — E2E coverage backfill` in `ROADMAP.md`.
 
-## UI-first policy
+## UI-only policy
 
-**Default to UI E2E.** Every flow that a real user touches via the browser must be automated through `--project=ui-chromium` (Playwright `page` fixture, real DOM interactions, role-based selectors). API-only specs are the **fallback**, allowed only when:
+**Every Sentri flow has a UI surface, so every row must be driven through the browser.** Specs run under `--project=ui-chromium` using the Playwright `page` fixture, real DOM, and role-based selectors. There is no "API-only ✅" — an API spec by itself never closes a row.
 
-1. The flow has no UI surface (background jobs, server-to-server webhooks, system endpoints).
-2. The UI surface exists but is not yet shipped (track as 🟨 with a "UI pending" note).
-3. The UI flow is **prohibitively flaky or slow** to drive through the browser AND the underlying contract is fully covered by the API spec — document the reason inline (e.g. `🟨 (API-only — UI flow is SSE-driven, see notes)`).
+API specs are still permitted, but only as **scaffolding** for the UI spec (e.g. seeding a verified user via `request.post("/api/auth/register")` so the UI test can drive `/login` directly, or pre-creating fixtures like an approved test). They never count toward ✅ on their own; the assertion that flips a row to ✅ must be a `expect(page.…)` call against the rendered UI.
 
-When fallback applies, the row's **Status** column carries an `(API-only)` suffix so reviewers can immediately see the UI gap. Backlog items default to UI specs unless they explicitly call out an API-only scope.
+The only exception is the ⏭️ tier — flows with genuinely no user-facing UI (outbound notifications, disk-mount probes). Those are explicitly out of scope here and covered at the unit/integration layer.
 
 ## Status legend
 
-- ✅ **Fully automated (UI)** — driven through `page.*` in a `ui-chromium` spec, runs in CI on every PR
-- ✅ **(API-only)** — fully automated against the HTTP layer; UI surface either absent or covered by the row above
-- 🟨 **Partial** — endpoint contract covered, but UI flow not yet automated; gaps called out in the row
-- 🟥 **Not automated** — only manual coverage in `QA.md`
-- ⏭️ **Out of scope** — deliberately manual-only (e.g. outbound notifications, Render/Render-disk smoke)
+- ✅ **Fully automated** — happy path driven through `page.*` in a `ui-chromium` spec; runs in CI on every PR
+- 🟨 **Partial** — UI spec started but missing assertions; gaps called out in the row
+- 🟥 **Not automated** — only manual coverage in `QA.md`. May have an existing API spec used as scaffolding — the row tracks UI coverage only.
+- ⏭️ **Out of scope** — no user-facing UI surface (e.g. outbound notifications, ephemeral-storage probe)
 
 ---
 
@@ -44,28 +41,28 @@ Why these five: each closes a UI gap exposed by the current API-only rows in the
 
 | QA.md ref | Step / flow | Spec | Status |
 |---|---|---|---|
-| §1 step 1–3 | Auth — register & verify (email link) | `api-auth.spec.mjs` :: *register creates user and login is blocked until verification* | 🟨 (API-only — UI login + verify-email flow not yet automated; partial UI in `ui-smoke.spec.mjs`) |
-| §1 step 1–3 | Auth — wrong-password rejection | `ui-smoke.spec.mjs` :: *invalid credentials show an error state* + `api-auth.spec.mjs` :: *login negative path with bad password* | ✅ |
-| §2 step 4 | Workspace — invite collaborator | — | 🟥 (UI: Settings → Members) |
-| §3 step 5 | Project — create | `full-functional-api.spec.mjs` :: *verify account, login, project+test CRUD happy path* | 🟨 (API-only — UI: `/projects/new` form + redirect to ProjectDetail not yet automated) |
-| §4 step 6 | Crawl — link mode | `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟨 (API-only — endpoint contract; UI: CrawlProjectModal not driven) |
-| §4 step 7 | Crawl — state exploration | — | 🟥 (UI: CrawlProjectModal mode selector) |
-| §5 step 8–9 | Generate — AI test draft creation | `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟨 (API-only — endpoint contract; UI: GenerateTestModal not driven) |
-| §6 step 10–12 | Recorder — start/stop session | `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟨 (API-only — start/stop; UI: RecorderModal canvas interaction not automated) |
-| §7 step 13–15 | Review — approve / reject test | `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟨 (API-only — UI: Tests page review buttons + ReviewModal not driven) |
-| §8 step 16–19 | Edit — Steps ↔ Source diff/preview | — | 🟥 (UI: TestDetail Steps↔Source toggle + diff modal) |
-| §9 step 20–22 | Run — execute regression | — | 🟥 (UI: RunRegressionModal + live RunDetail SSE) |
-| §10 step 23–26 | AI Fix — manual flow | `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟨 (API-only — apply-fix; UI: TestDetail "Fix with AI" + SSE stream not consumed) |
-| §11 step 27–29 | Visual baseline — first run + accept | — | 🟥 (UI: RunDetail Visual tab + "Accept visual changes" button) |
-| §12 step 30–34 | Run results / artifacts / reports | — | 🟥 (UI: RunDetail artifact downloads + `/reports` page) |
-| §13 step 35 | Notifications — Teams/email/webhook fire | — | ⏭️ (Outbound side-effects out of scope for E2E; mocked at unit level) |
-| §14 step 36–38 | Automation — CI/CD trigger token + cron schedule | `full-functional-api.spec.mjs` :: *session security: logout revokes access and missing CSRF blocks mutation* | 🟨 (API-only — CSRF only; UI: `/automation` page TokenManager + ScheduleManager not driven) |
-| §15 step 39–41 | Export — Zephyr / TestRail / Playwright ZIP | `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟨 (API-only — Zephyr/TestRail; UI: ProjectExportMenu dropdown + Playwright ZIP not driven) |
-| §16 step 42–44 | AI Chat — multi-turn + export | — | 🟥 (UI: `/chat` page session management + Markdown/JSON export) |
-| §17 step 45 | Dashboard — pass-rate / defect breakdown | — | 🟥 (UI: Dashboard widgets + PDF export) |
-| §18 step 46–47 | Recycle bin — soft-delete + restore + audit log | — | 🟥 (UI: Settings → Recycle Bin + Audit Log filter) |
-| §19 step 48–49 | Account / GDPR — export + delete | — | 🟥 (UI: Settings → Account password-confirmed export + delete) |
-| §20 step 50–51 | Permissions — viewer 403, outsider 403 | `full-functional-api.spec.mjs` :: *negative validations for project/test inputs* | 🟨 (API-only — negative path; UI: ProtectedRoute + role-gated buttons not driven) |
+| §1 step 1–3 | Auth — register & verify (email link) | UI: — · scaffolding: `api-auth.spec.mjs` :: *register creates user and login is blocked until verification* | 🟥 (UI: `/register` form → verify-email link click → `/login` success → `/dashboard`) |
+| §1 step 1–3 | Auth — wrong-password rejection | UI: `ui-smoke.spec.mjs` :: *invalid credentials show an error state* · scaffolding: `api-auth.spec.mjs` :: *login negative path with bad password* | ✅ |
+| §2 step 4 | Workspace — invite collaborator | — | 🟥 (UI: Settings → Members invite form + accept-link incognito flow) |
+| §3 step 5 | Project — create | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *verify account, login, project+test CRUD happy path* | 🟥 (UI: `/projects/new` form → redirect to `/projects/:id` → project visible in list) |
+| §4 step 6 | Crawl — link mode | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: ProjectDetail → CrawlProjectModal → live progress → completed badge) |
+| §4 step 7 | Crawl — state exploration | — | 🟥 (UI: CrawlProjectModal mode selector + state-explorer progress) |
+| §5 step 8–9 | Generate — AI test draft creation | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: Tests page → GenerateTestModal → Draft test row appears) |
+| §6 step 10–12 | Recorder — start/stop session | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: Tests page → RecorderModal → forward canvas events → Stop & Save → Draft test) |
+| §7 step 13–15 | Review — approve / reject test | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: Tests page filter pills + bulk approve toolbar + ReviewModal) |
+| §8 step 16–19 | Edit — Steps ↔ Source diff/preview | — | 🟥 (UI: TestDetail Steps↔Source toggle + diff modal + accept/discard) |
+| §9 step 20–22 | Run — execute regression | — | 🟥 (UI: RunRegressionModal → live RunDetail SSE log + per-test status badges) |
+| §10 step 23–26 | AI Fix — manual flow | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: TestDetail "Fix with AI" → SSE stream renders → Accept → re-approve) |
+| §11 step 27–29 | Visual baseline — first run + accept | — | 🟥 (UI: RunDetail Visual tab → diff PNG visible → "Accept visual changes" button) |
+| §12 step 30–34 | Run results / artifacts / reports | — | 🟥 (UI: RunDetail artifact downloads + `/reports` page renders + Dashboard PDF export) |
+| §13 step 35 | Notifications — Teams/email/webhook fire | — | ⏭️ (Outbound side-effects — no user-facing UI; covered by `notifications-api.test.js` unit tests) |
+| §14 step 36–38 | Automation — CI/CD trigger token + cron schedule | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *session security: logout revokes access and missing CSRF blocks mutation* | 🟥 (UI: `/automation` page TokenManager + ScheduleManager preset picker + next-run badge) |
+| §15 step 39–41 | Export — Zephyr / TestRail / Playwright ZIP | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: ProjectExportMenu dropdown → file download triggers for each format) |
+| §16 step 42–44 | AI Chat — multi-turn + export | — | 🟥 (UI: `/chat` page session create/rename/delete + Markdown/JSON export) |
+| §17 step 45 | Dashboard — pass-rate / defect breakdown | — | 🟥 (UI: Dashboard widgets render with seeded run data + PDF export downloads) |
+| §18 step 46–47 | Recycle bin — soft-delete + restore + audit log | — | 🟥 (UI: Settings → Recycle Bin restore/purge + Audit Log filter by user) |
+| §19 step 48–49 | Account / GDPR — export + delete | — | 🟥 (UI: Settings → Account password-confirmed export download + 5s-disarm delete confirm) |
+| §20 step 50–51 | Permissions — viewer 403, outsider 403 | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *negative validations for project/test inputs* | 🟥 (UI: viewer role login → role-gated buttons hidden / clicking shows 403; outsider workspace URL redirect) |
  
 ---
 
@@ -78,8 +75,8 @@ Per-feature happy paths that aren't part of the Golden journey. Can ship indepen
 | 🔐 Authentication | Forgot / reset password | 🟥 |
 | 🔐 Authentication | Login rate-limit (429 after 5–10/15min) | 🟥 |
 | 👥 Workspaces | Switch workspace | 🟥 |
-| 📁 Projects | Edit project (`PATCH /projects/:id`, ENH-036) | 🟨 |
-| 🧪 Tests Page | Bulk approve / reject | 🟨 (API-only) |
+| 📁 Projects | Edit project (`PATCH /projects/:id`, ENH-036) | 🟥 (UI: pencil-icon → `/projects/new?edit=<id>` form pre-filled, save round-trip) |
+| 🧪 Tests Page | Bulk approve / reject | 🟥 (UI: Tests page checkbox-select + bulk action toolbar) |
 | 🎥 Recorder | Captured action vocabulary (click/dblclick/etc.) | 🟥 |
 | ▶️ Runs | Cross-browser (Firefox/WebKit) — DIF-002 | ✅ (UI-runner — `.github/workflows/cross-browser.yml` launches each engine) |
 | 🪄 AI Fix | SSE stream consumption | 🟥 |
@@ -90,11 +87,11 @@ Per-feature happy paths that aren't part of the Golden journey. Can ship indepen
 | 🤖 AI Chat | Cross-workspace data-leak refusal | 🟥 |
 | ⚙️ Settings | AI provider key save + restore | 🟥 |
 | 👤 Account / GDPR | Export + delete | 🟥 |
-| 📧 Email Verification | Resend + grandfathering | 🟨 |
+| 📧 Email Verification | Resend + grandfathering | 🟥 (UI: Login page "verify your email" state + Resend button click) |
 | ♻️ Recycle Bin | Restore + purge | 🟥 |
 | 🧾 Audit Log | `userId` / `userName` per activity | 🟥 |
 | 🔔 Notifications | At-least-one-channel validation | 🟥 |
-| 🔒 Security | IDOR + cross-workspace 403 | 🟨 |
+| 🔒 Security | IDOR + cross-workspace 403 | 🟥 (UI: outsider hitting another workspace URL → redirect / 403 page) |
 | 🚦 Quality Gates (AUTO-012) | CRUD + evaluator + trigger response | 🟥 |
 | 📑 Reports / PDF | Dashboard PDF export | 🟥 |
 | 🆕 New Project page | SSRF block on private URLs | 🟥 |

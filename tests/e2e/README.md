@@ -2,14 +2,15 @@
 
 ## Scope
 
-**UI-first.** Every flow a real user touches via the browser is automated through `--project=ui-chromium` (Playwright `page` fixture, real DOM, role-based selectors). API-only specs are the **fallback** — allowed only when the flow has no UI surface, the UI isn't shipped yet, or the UI flow is prohibitively flaky/slow. See [`COVERAGE.md`](./COVERAGE.md) § UI-first policy for the full rule, and the per-row matrix for what's currently UI-driven vs. API-only.
+**UI-only for ✅ rows.** Every flow a real user touches via the browser is automated through `--project=ui-chromium` (Playwright `page` fixture, real DOM, role-based selectors). API specs in this suite are **scaffolding** — they pre-seed fixtures (registered users, approved tests, etc.) so the UI test can jump straight to the page under test. They never close a coverage row by themselves. See [`COVERAGE.md`](./COVERAGE.md) § UI-only policy for the rule, and the per-row matrix for what's UI-driven (✅) vs. still missing (🟥/🟨).
 
-Today the suite covers:
-- **UI smoke** — login route renders + invalid-credentials error state (`ui-smoke.spec.mjs`)
-- **API auth lifecycle** (registration, verification, login negative path) — fallback while UI verify-email + login-success specs are written
-- **API full functional flow** (project + test CRUD + approval) — fallback while ProjectDetail / Tests page UI specs are written
-- **API negative validations + session security** (CSRF, logout revocation) — appropriate as API-only (no user-facing UI for header tampering)
-- **Functional-area endpoint contracts** (crawl, generate, recorder, run-all, AI fix, AI chat) — fallback while corresponding modal/page UI specs are written
+Files in `specs/` today:
+- `ui-smoke.spec.mjs` — UI: login route renders + invalid-credentials error state
+- `api-auth.spec.mjs` — scaffolding: registration, verification, login negative path
+- `full-functional-api.spec.mjs` — scaffolding: project + test CRUD + approval + session security (CSRF / logout revocation)
+- `functional-areas.spec.mjs` — scaffolding: crawl, generate, recorder, run-all, AI fix, AI chat endpoint contracts
+
+The scaffolding specs run alongside the UI suite and have value for fixture seeding + endpoint smoke, but they don't substitute for `expect(page.…)` assertions against the rendered DOM. New user-facing PRs must add a UI spec under `specs/<area>-ui.spec.mjs` per [`REVIEW.md`](../../REVIEW.md) § Mandatory Test Requirements.
 
 > For **manual** end-to-end validation (Golden E2E happy path + per-feature happy paths and negatives), see [`QA.md`](../../QA.md) at the repo root. The Playwright suite below is the automated complement — both should pass before release.
 
