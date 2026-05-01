@@ -10,19 +10,19 @@
 
 ## 🚨 10-Day Production Readiness Plan
 
-> **Production target:** ship in 10 days. Only **one** roadmap item is a hard prod blocker (`INF-006`); every 🟡 High item in Phase 2 is already ✅. The plan below is sequenced so the first 5 days clear the blocker and Golden E2E, leaving slack for review-thread cleanup and a stabilisation window before tag.
+> **Production target:** ship in 10 days. `INF-006` ✅ shipped in PR #1, clearing the last 🔴 Blocker; every 🟡 High item in Phase 2 is also already ✅. The plan below is sequenced so the first few days clear Golden E2E and AUTO-012, leaving slack for review-thread cleanup and a stabilisation window before tag.
 
 | Day | Focus | Owner |
 |---|---|---|
-| 1–2 | **INF-006** — Render Blueprint + ephemeral-storage warning + README callout (Effort: S) | Backend |
+| 1–3 | **AUTO-012** — SLA / quality gate enforcement (Effort: M) | Backend |
 | 2–3 | Resolve **all open PR review threads** (start with `permissions.json` line numbers off by 5) | All |
 | 3–5 | Run **Golden E2E Happy Path** (`QA.md:240-340`, 51 steps) on Chrome + at least one other browser | QA |
 | 5–6 | **Fix any Blocker / Critical bugs** found during the QA pass | All |
 | 6–7 | (optional) **DIF-015b Gap 2** — recorder data-testid scoring (Effort: S, contained) | Backend |
-| 7–8 | (optional) **AUTO-012** — SLA / quality gate enforcement (Effort: M, only if customer-driven) | Backend |
+| 7–8 | (optional) **AUTO-017** — Web Vitals performance budgets (Effort: M) | Backend |
 | 8–10 | Stabilisation window: CI green ≥ 2 days on `main`; cut release tag | All |
 
-**Explicitly deferred (do not ship in this window):** SEC-004 (MFA), SEC-005 (SSO), DIF-005 / DIF-008 / DIF-009 / DIF-010 / DIF-012, all Phase 4 items except the optional AUTO-012. Track post-launch on customer demand.
+**Explicitly deferred (do not ship in this window):** SEC-004 (MFA), SEC-005 (SSO), DIF-005 / DIF-008 / DIF-009 / DIF-010 / DIF-012, all Phase 4 items except the optional AUTO-017. Track post-launch on customer demand.
 
 ---
 
@@ -105,14 +105,13 @@ These can be picked up by a second engineer alongside the current PR without fil
 
 | ID | Title | Effort | Shared files? |
 |----|-------|--------|---------------|
-| **DIF-015b Gap 2** | **Recorder selectorGenerator: data-testid quality scoring** | **S** | **`backend/src/runner/recorder.js` only — no overlap with INF-006 (current PR) / AUTO-012 / AUTO-017** |
+| **DIF-015b Gap 2** | **Recorder selectorGenerator: data-testid quality scoring** | **S** | **`backend/src/runner/recorder.js` only — no overlap with AUTO-012 (current PR) / AUTO-017 / DIF-005** |
 | DIF-015b Gap 3 | Recorder selectorGenerator: iframe + shadow-DOM traversal | M | `backend/src/runner/recorder.js` only |
-| AUTO-017 | Performance budget testing (Web Vitals) | M | None |
 | AUTO-019 | Run diffing: per-test comparison across runs | M | None |
 
 > **DIF-015b follow-up priority:** Gap 2 (data-testid scoring) is the highest-value next step — it's a small, contained edit to the priority chain in `selectorGenerator()` and unblocks DIF-015b flipping to ✅ Complete in ROADMAP.md once Gap 3 also ships. Both gaps are documented in `ROADMAP.md` § DIF-015b with concrete heuristics, files-to-change, and acceptance criteria. Pick Gap 2 next; defer Gap 3 to a separate PR (different effort tier).
 >
-> Why these aren't promoted to "Current PR": INF-006 (Render Blueprint) is the only remaining 🔴 Blocker before production. The recorder gaps are tracked here so they don't get lost — pick them up alongside INF-006 if a second agent has bandwidth (zero file overlap; INF-006 only touches `render.yaml` / `index.js` / docs).
+> Why these aren't promoted to "Current PR": AUTO-012 (quality gates) is the sprint target. The recorder gaps are tracked here so they don't get lost — pick them up alongside AUTO-012 if a second agent has bandwidth (zero file overlap; AUTO-012 only touches `projects.js` / `testRunner.js` / `trigger.js` / ProjectDetail UI).
 
 ---
 
