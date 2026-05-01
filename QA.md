@@ -353,6 +353,8 @@ Each area uses this format:
 
 ### 🔐 Authentication
 
+_(automated: see `tests/e2e/specs/ui-smoke.spec.mjs` for login negative path + verified login redirect to `/dashboard`; coverage tracked in `tests/e2e/COVERAGE.md` Golden rows for Sec 1 wrong-password; verified-login happy path remains pending until CI turns that row ✅.)_
+
 **Preconditions:** Logged out, fresh incognito window.
 
 **Happy path:**
@@ -704,6 +706,8 @@ Each area uses this format:
 ---
 
 ### 📊 Dashboard
+
+_(automated: smoke-level login → dashboard landing is covered in `tests/e2e/specs/ui-smoke.spec.mjs`; full widget/report assertions remain manual until dedicated dashboard UI coverage lands.)_
 
 **Preconditions:** Workspace has runs, tests, and projects with data.
 

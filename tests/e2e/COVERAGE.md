@@ -27,11 +27,11 @@ The only exception is the ⏭️ tier — flows with genuinely no user-facing UI
 
 Pick the top item. Each is sized to fit one PR (1–3 specs, ≤ 200 LOC each), **UI by default**. If a UI spec isn't feasible, document the reason in the row and mark `(API-only)` per the UI-first policy above.
 
-1. **Login → Dashboard happy path** (`QA.md` §1 + §17) → extend `tests/e2e/specs/ui-smoke.spec.mjs` (or split into `auth-ui.spec.mjs`): seed a verified user via API, then drive `getByLabel('Email')` + `getByLabel('Password')` + `getByRole('button', { name: /sign in/i })` and assert `/dashboard` loads with the workspace name visible. **UI-only.**
-2. **Project — create via UI form** (`QA.md` §3 step 5) → new `tests/e2e/specs/project-create-ui.spec.mjs` driving the `/projects/new` form (name + URL) end-to-end, assert redirect to `/projects/:id` and project visible in the list. **UI-only.**
-3. **Tests review — approve / reject + ReviewModal** (`QA.md` §7 step 13–15) → new `tests/e2e/specs/tests-review-ui.spec.mjs`: seed Draft tests via API, then drive the Tests page filter pills + bulk-approve toolbar via `getByRole('button', { name: /approve/i })`. **UI-only.**
-4. **Run regression — RunRegressionModal + live RunDetail** (`QA.md` §9 step 20–22) → new `tests/e2e/specs/run-regression-ui.spec.mjs`: open the modal, set `parallelWorkers: 2`, click Run, assert RunDetail SSE log streams in and the per-test status badges update. **UI-only** (SSE is the user surface; consume it via `page` not `request`).
-5. **Quality gates — Settings panel save + RunDetail badge** (`QA.md` § Quality Gates) → new `tests/e2e/specs/quality-gates-ui.spec.mjs`: drive ProjectDetail → Settings → Quality Gates form, save `{ minPassRate: 95 }`, trigger a sub-gate run, assert the red `Gates ✗` badge + inline violation panel render on RunDetail. **UI-only.**
+1. **Project — create via UI form** (`QA.md` §3 step 5) → new `tests/e2e/specs/project-create-ui.spec.mjs` driving the `/projects/new` form (name + URL) end-to-end, assert redirect to `/projects/:id` and project visible in the list. **UI-only.**
+2. **Tests review — approve / reject + ReviewModal** (`QA.md` §7 step 13–15) → new `tests/e2e/specs/tests-review-ui.spec.mjs`: seed Draft tests via API, then drive the Tests page filter pills + bulk-approve toolbar via `getByRole('button', { name: /approve/i })`. **UI-only.**
+3. **Run regression — RunRegressionModal + live RunDetail** (`QA.md` §9 step 20–22) → new `tests/e2e/specs/run-regression-ui.spec.mjs`: open the modal, set `parallelWorkers: 2`, click Run, assert RunDetail SSE log streams in and the per-test status badges update. **UI-only** (SSE is the user surface; consume it via `page` not `request`).
+4. **Quality gates — Settings panel save + RunDetail badge** (`QA.md` § Quality Gates) → new `tests/e2e/specs/quality-gates-ui.spec.mjs`: drive ProjectDetail → Settings → Quality Gates form, save `{ minPassRate: 95 }`, trigger a sub-gate run, assert the red `Gates ✗` badge + inline violation panel render on RunDetail. **UI-only.**
+5. **Workspace — invite collaborator UI flow** (`QA.md` §2 step 4) → new `tests/e2e/specs/workspace-invite-ui.spec.mjs`: drive Settings → Members invite form, assert pending invite appears, then accept-link flow in incognito confirms membership. **UI-only.**
 
 Why these five: each closes a UI gap exposed by the current API-only rows in the Golden E2E table. Zero file overlap, so up to 5 agents can ship in parallel.
 
@@ -41,7 +41,7 @@ Why these five: each closes a UI gap exposed by the current API-only rows in the
 
 | QA.md ref | Step / flow | Spec | Status |
 |---|---|---|---|
-| Sec 1, steps 1-3 | Auth - register & verify (email link) | UI: — · scaffolding: `api-auth.spec.mjs` :: *register creates user and login is blocked until verification* | 🟥 (UI: `/register` form → verify-email link click → `/login` success → `/dashboard`) |
+| Sec 1, steps 1-3 | Auth - register & verify (email link) | UI: `ui-smoke.spec.mjs` :: *verified user can sign in and land on dashboard with workspace visible* · scaffolding: `api-auth.spec.mjs` :: *register creates user and login is blocked until verification* | 🟥 (Pending CI: `UI E2E — Playwright smoke (Chromium)` must pass before flipping ✅) |
 | Sec 1, steps 1-3 | Auth — wrong-password rejection | UI: `ui-smoke.spec.mjs` :: *invalid credentials show an error state* · scaffolding: `api-auth.spec.mjs` :: *login negative path with bad password* | ✅ |
 | Sec 2, step 4 | Workspace — invite collaborator | — | 🟥 (UI: Settings → Members invite form + accept-link incognito flow) |
 | Sec 3, step 5 | Project — create | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *verify account, login, project+test CRUD happy path* | 🟥 (UI: `/projects/new` form → redirect to `/projects/:id` → project visible in list) |
@@ -59,7 +59,7 @@ Why these five: each closes a UI gap exposed by the current API-only rows in the
 | Sec 14, steps 36-38 | Automation — CI/CD trigger token + cron schedule | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *session security: logout revokes access and missing CSRF blocks mutation* | 🟥 (UI: `/automation` page TokenManager + ScheduleManager preset picker + next-run badge) |
 | Sec 15, steps 39-41 | Export — Zephyr / TestRail / Playwright ZIP | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: ProjectExportMenu dropdown → file download triggers for each format) |
 | Sec 16, steps 42-44 | AI Chat — multi-turn + export | — | 🟥 (UI: `/chat` page session create/rename/delete + Markdown/JSON export) |
-| Sec 17, step 45 | Dashboard — pass-rate / defect breakdown | — | 🟥 (UI: Dashboard widgets render with seeded run data + PDF export downloads) |
+| Sec 17, step 45 | Dashboard — pass-rate / defect breakdown | — | 🟥 (UI: Dashboard widgets render pass-rate + defect-breakdown charts with non-empty data) |
 | Sec 18, steps 46-47 | Recycle bin — soft-delete + restore + audit log | — | 🟥 (UI: Settings → Recycle Bin restore/purge + Audit Log filter by user) |
 | Sec 19, steps 48-49 | Account / GDPR — export + delete | — | 🟥 (UI: Settings → Account password-confirmed export download + 5s-disarm delete confirm) |
 | Sec 20, steps 50-51 | Permissions — viewer 403, outsider 403 | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *negative validations for project/test inputs* | 🟥 (UI: viewer role login → role-gated buttons hidden / clicking shows 403; outsider workspace URL redirect) |
