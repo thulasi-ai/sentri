@@ -53,16 +53,16 @@ Why these five: each closes a UI gap exposed by the current API-only rows in the
 | Sec 8, steps 16-19 | Edit — Steps ↔ Source diff/preview | — | 🟥 (UI: TestDetail Steps↔Source toggle + diff modal + accept/discard) |
 | Sec 9, steps 20-22 | Run — execute regression | — | 🟥 (UI: RunRegressionModal → live RunDetail SSE log + per-test status badges) |
 | Sec 10, steps 23-26 | AI Fix — manual flow | UI: — · scaffolding: `functional-areas.spec.mjs` :: *crawl + generate + recorder + ai-fix/chat endpoint contracts* | 🟥 (UI: TestDetail "Fix with AI" → SSE stream renders → Accept → re-approve) |
-| §11 step 27–29 | Visual baseline — first run + accept | — | 🟥 (UI: RunDetail Visual tab → diff PNG visible → "Accept visual changes" button) |
-| §12 step 30–34 | Run results / artifacts / reports | — | 🟥 (UI: RunDetail artifact downloads + `/reports` page renders + Dashboard PDF export) |
-| §13 step 35 | Notifications — Teams/email/webhook fire | — | ⏭️ (Outbound side-effects — no user-facing UI; covered by `notifications-api.test.js` unit tests) |
-| §14 step 36–38 | Automation — CI/CD trigger token + cron schedule | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *session security: logout revokes access and missing CSRF blocks mutation* | 🟥 (UI: `/automation` page TokenManager + ScheduleManager preset picker + next-run badge) |
-| §15 step 39–41 | Export — Zephyr / TestRail / Playwright ZIP | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: ProjectExportMenu dropdown → file download triggers for each format) |
-| §16 step 42–44 | AI Chat — multi-turn + export | — | 🟥 (UI: `/chat` page session create/rename/delete + Markdown/JSON export) |
-| §17 step 45 | Dashboard — pass-rate / defect breakdown | — | 🟥 (UI: Dashboard widgets render with seeded run data + PDF export downloads) |
-| §18 step 46–47 | Recycle bin — soft-delete + restore + audit log | — | 🟥 (UI: Settings → Recycle Bin restore/purge + Audit Log filter by user) |
-| §19 step 48–49 | Account / GDPR — export + delete | — | 🟥 (UI: Settings → Account password-confirmed export download + 5s-disarm delete confirm) |
-| §20 step 50–51 | Permissions — viewer 403, outsider 403 | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *negative validations for project/test inputs* | 🟥 (UI: viewer role login → role-gated buttons hidden / clicking shows 403; outsider workspace URL redirect) |
+| Sec 11, steps 27-29 | Visual baseline — first run + accept | — | 🟥 (UI: RunDetail Visual tab → diff PNG visible → "Accept visual changes" button) |
+| Sec 12, steps 30-34 | Run results / artifacts / reports | — | 🟥 (UI: RunDetail artifact downloads + `/reports` page renders + Dashboard PDF export) |
+| Sec 13, step 35 | Notifications — Teams/email/webhook fire | — | ⏭️ (Outbound side-effects — no user-facing UI; covered by `notifications-api.test.js` unit tests) |
+| Sec 14, steps 36-38 | Automation — CI/CD trigger token + cron schedule | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *session security: logout revokes access and missing CSRF blocks mutation* | 🟥 (UI: `/automation` page TokenManager + ScheduleManager preset picker + next-run badge) |
+| Sec 15, steps 39-41 | Export — Zephyr / TestRail / Playwright ZIP | UI: — · scaffolding: `functional-areas.spec.mjs` :: *project tests workflow: create, approve/reject/restore, export, run* | 🟥 (UI: ProjectExportMenu dropdown → file download triggers for each format) |
+| Sec 16, steps 42-44 | AI Chat — multi-turn + export | — | 🟥 (UI: `/chat` page session create/rename/delete + Markdown/JSON export) |
+| Sec 17, step 45 | Dashboard — pass-rate / defect breakdown | — | 🟥 (UI: Dashboard widgets render with seeded run data + PDF export downloads) |
+| Sec 18, steps 46-47 | Recycle bin — soft-delete + restore + audit log | — | 🟥 (UI: Settings → Recycle Bin restore/purge + Audit Log filter by user) |
+| Sec 19, steps 48-49 | Account / GDPR — export + delete | — | 🟥 (UI: Settings → Account password-confirmed export download + 5s-disarm delete confirm) |
+| Sec 20, steps 50-51 | Permissions — viewer 403, outsider 403 | UI: — · scaffolding: `full-functional-api.spec.mjs` :: *negative validations for project/test inputs* | 🟥 (UI: viewer role login → role-gated buttons hidden / clicking shows 403; outsider workspace URL redirect) |
  
 ---
 
