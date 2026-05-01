@@ -37,7 +37,9 @@ test.describe('Sentri UI smoke (login route)', () => {
     const api = new SessionClient(request);
     const { email, password } = await registerUser(request);
     const user = userRepo.getByEmail(email);
+    expect(user).toBeTruthy();
     const tokenRow = verificationTokenRepo.getUnusedByUserId(user.id);
+    expect(tokenRow?.token).toBeTruthy();
 
     const verifyResponse = await api.call('get', `/api/v1/auth/verify?token=${encodeURIComponent(tokenRow.token)}`);
     expect(verifyResponse.status()).toBe(200);
