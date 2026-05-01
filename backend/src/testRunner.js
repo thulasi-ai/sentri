@@ -44,6 +44,29 @@ import { signRunArtifacts, signArtifactUrl } from "./middleware/appSetup.js";
 import { writeArtifactBuffer } from "./utils/objectStorage.js";
 import fs from "fs";
 
+
+function evaluateQualityGates(gates, run) {
+  if (!gates || typeof gates !== "object") return null;
+  const violations = [];
+  const total = Number(run.total || 0);
+  const failed = Number(run.failed || 0);
+  const passed = Number(run.passed || 0);
+  const passRate = total > 0 ? (passed / total) * 100 : 100;
+  const flakyPct = total > 0 ? ((run.retryCount || 0) / total) * 100 : 0;
+
+  if (Number.isFinite(gates.minPassRate) && passRate < gates.minPassRate) {
+    violations.push({ rule: "minPassRate", threshold: gates.minPassRate, actual: Number(passRate.toFixed(2)) });
+  }
+  if (Number.isFinite(gates.maxFlakyPct) && flakyPct > gates.maxFlakyPct) {
+    violations.push({ rule: "maxFlakyPct", threshold: gates.maxFlakyPct, actual: Number(flakyPct.toFixed(2)) });
+  }
+  if (Number.isFinite(gates.maxFailures) && failed > gates.maxFailures) {
+    violations.push({ rule: "maxFailures", threshold: gates.maxFailures, actual: failed });
+  }
+
+  return { passed: violations.length === 0, violations };
+}
+
 // ── Concurrency helper ────────────────────────────────────────────────────────
 // Lightweight promise pool — no external dependencies. Runs `fn` for each item
 // in `items` with at most `concurrency` in-flight at once. Results are returned
@@ -311,6 +334,8 @@ export async function runTests(project, tests, run, { parallelWorkers, browser: 
   // (migration 011) are populated for run-level analytics queries.
   run.retryCount = run.results.reduce((sum, r) => sum + (r.retryCount || 0), 0);
   run.failedAfterRetry = run.results.filter(r => r.failedAfterRetry).length;
+
+  run.gateResult = evaluateQualityGates(project.qualityGates, run);
 
   // NOTE: We intentionally keep run.status === "running" here so that:
   //   1. The abort endpoint (POST /api/runs/:id/abort) still works during the

@@ -32,7 +32,7 @@ export { parsePagination };
 const JSON_FIELDS = [
   "tests", "results", "testQueue", "generateInput",
   "promptAudit", "pipelineStats", "feedbackLoop", "videoSegments",
-  "qualityAnalytics", "pages",
+  "qualityAnalytics", "pages", "gateResult",
 ];
 
 function rowToRun(row) {
@@ -75,6 +75,7 @@ const INSERT_COLS = [
   "browser", // DIF-002: chromium | firefox | webkit
   "retryCount", "failedAfterRetry", // AUTO-005: aggregated retry telemetry
   "networkCondition", // AUTO-006: fast | slow3g | offline (migration 012)
+  "gateResult", // AUTO-012: quality gate pass/fail summary
 ];
 
 const INSERT_SQL = `INSERT INTO runs (${INSERT_COLS.join(", ")})
