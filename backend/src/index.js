@@ -22,6 +22,8 @@
  */
 
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
 import { getDatabase, closeDatabase } from "./database/sqlite.js";
 import { migrateFromJsonIfNeeded } from "./database/migrate.js";
 import * as runRepo from "./database/repositories/runRepo.js";
@@ -64,6 +66,35 @@ import { runAbortControllers } from "./utils/runWithAbort.js";
 
 dotenv.config();
 
+function warnIfEphemeralStorage() {
+  if (process.env.DATABASE_URL) return;
+
+  const rawDbPath = process.env.DB_PATH || path.join(process.cwd(), "backend", "data", "sentri.db");
+  const dbPath = path.resolve(rawDbPath);
+  const markerPath = `${dbPath}.boot-marker`;
+  const isTmpPath = dbPath.startsWith("/tmp/") || dbPath === "/tmp";
+  let hasPriorProcessWrite = false;
+
+  try {
+    const markerStat = fs.statSync(markerPath);
+    hasPriorProcessWrite = Date.now() - markerStat.mtimeMs > 10_000;
+  } catch {
+    hasPriorProcessWrite = false;
+  }
+
+  if (isTmpPath || !hasPriorProcessWrite) {
+    console.warn(formatLogLine("warn", null, `[db] DB path appears ephemeral — data will be lost on redeploy (path: ${dbPath})`));
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+    fs.writeFileSync(markerPath, new Date().toISOString());
+  } catch {
+    // Best-effort marker write only.
+  }
+}
+
+
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // Prevent the server from dying on unhandled errors.
 // Playwright can throw unhandled rejections from browser internals, page event
@@ -82,6 +113,7 @@ process.on("unhandledRejection", (reason) => {
 // ─── DB init ──────────────────────────────────────────────────────────────────
 // 1. Open database (SQLite or PostgreSQL) and apply schema migrations
 getDatabase();
+warnIfEphemeralStorage();
 // 2. Migrate legacy sentri-db.json → SQLite (one-time, skips if already done)
 migrateFromJsonIfNeeded();
 // 3. Restore persisted AI provider keys from the database into the runtime cache.
