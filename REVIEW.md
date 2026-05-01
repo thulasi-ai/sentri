@@ -94,7 +94,7 @@ cd frontend && npm test
 | New middleware (rate limiter, CSRF, etc.) | Integration test verifying the middleware is wired correctly | Dedicated file or `tests/auth-cookies.test.js` |
 | Security fix | Unit test for the fix mechanism AND integration test proving the vulnerability is closed | Dedicated file (e.g. `tests/security-hardening.test.js`) |
 | Pipeline stage change | Unit tests | `tests/pipeline.test.js` or `tests/pipeline-orchestrator.test.js` |
-| New user-facing flow (auth, project CRUD, run lifecycle, export, etc.) | E2E spec exercising the full HTTP/UI flow **and** a corresponding section / Golden E2E step in [QA.md](./QA.md) | `tests/e2e/specs/<area>.spec.mjs` (see STANDARDS.md § E2E Tests); update `QA.md` at repo root |
+| New user-facing flow (auth, project CRUD, run lifecycle, export, etc.) | E2E spec exercising the full HTTP/UI flow **and** a corresponding section / Golden E2E step in [QA.md](./QA.md), **and** a ✅ row in [`tests/e2e/COVERAGE.md`](./tests/e2e/COVERAGE.md) | `tests/e2e/specs/<area>.spec.mjs` (see STANDARDS.md § E2E Tests); update `QA.md` at repo root; flip the matching row in `tests/e2e/COVERAGE.md` from 🟥/🟨 to ✅ |
 
 **Register every new test file** in `backend/tests/run-tests.js` so `npm test` runs it.
 

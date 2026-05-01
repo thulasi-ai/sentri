@@ -34,3 +34,7 @@ If frontend is unavailable, UI specs will auto-skip and API specs still run.
 ## CI
 - `.github/workflows/ci.yml` now includes a dedicated **UI E2E — Playwright smoke (Chromium)** job.
 - The job provisions Chromium, boots backend/frontend, and runs `ui-chromium` project with `RUN_UI_E2E=true`.
+
+## Coverage & Backlog
+
+What's automated vs. still manual lives in [`COVERAGE.md`](./COVERAGE.md) — single source of truth, mirrors `QA.md`'s Golden E2E Happy Path (51 steps) and per-feature flows. Read it before adding a new spec; pick the top **Backlog** item; flip the matching row from 🟥 / 🟨 to ✅ in the same PR. The backfill queue itself is tracked as `MNT-012 — E2E coverage backfill` in `ROADMAP.md`.

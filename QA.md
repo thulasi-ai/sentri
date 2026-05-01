@@ -116,7 +116,7 @@ No `import` lines. No `request.fetch` / `request.get` / `request.post`. Role-bas
 
 **When verifying a permissions claim:** read [`backend/src/middleware/permissions.json`](./backend/src/middleware/permissions.json), not the markdown matrix below — the JSON is the canonical machine-readable form. The markdown table mirrors it for humans.
 
-> **Automated coverage:** This manual plan is the human baseline. Automated unit / component / E2E tests are tracked in [#98](https://github.com/RameshBabuPrudhvi/sentri/issues/98). Sections already covered by automation should be tagged `_(automated by tests/…)_` — manual testers may skip those during release sign-off. When you add an automated test, update the matching `QA.md` section and Coverage Checklist row.
+> **Automated coverage:** This manual plan is the human baseline. Automated E2E specs live under [`tests/e2e/specs/`](./tests/e2e/specs/); the per-step automation matrix is at [`tests/e2e/COVERAGE.md`](./tests/e2e/COVERAGE.md) — check that first to see which Golden E2E steps and per-feature flows are already ✅ automated vs. still 🟥 manual-only. Sections already covered by automation should be tagged `_(automated: see tests/e2e/COVERAGE.md row …)_` — manual testers may skip those during release sign-off. When you add an automated test, update the matching `QA.md` section AND flip the row in `tests/e2e/COVERAGE.md`.
 
 ---
 
