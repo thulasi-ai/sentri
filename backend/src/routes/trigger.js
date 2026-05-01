@@ -211,7 +211,6 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
           failed: finishedRun.failed,
           total: finishedRun.total,
           error: finishedRun.error || null,
-          gateResult: finishedRun.gateResult || null,
         });
         safeFetchCallback(callbackUrl, payload)
           .catch(() => { /* best-effort — never fails the run */ });
@@ -260,7 +259,6 @@ router.get("/projects/:id/trigger/runs/:runId", requireTrigger, (req, res) => {
     finishedAt: run.finishedAt || null,
     duration: run.duration || null,
     error: run.error || null,
-    gateResult: run.gateResult || null,
   }));
 });
 

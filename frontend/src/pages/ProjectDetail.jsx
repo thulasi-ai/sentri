@@ -25,7 +25,6 @@ import ActiveRunBanner from "../components/project/ActiveRunBanner.jsx";
 import RunToast from "../components/project/RunToast.jsx";
 import RunsTab from "../components/project/RunsTab.jsx";
 import TraceabilityTab from "../components/project/TraceabilityTab.jsx";
-import QualityGatesPanel from "../components/project/QualityGatesPanel.jsx";
 
 import ProjectHeader from "../components/project/ProjectHeader.jsx";
 import TablePagination from "../components/shared/TablePagination.jsx";
@@ -356,7 +355,6 @@ export default function ProjectDetail() {
           ["review", `Tests (${testCounts.total})`],
           ["runs",   `Runs (${runsMeta.total})`],
           ["traceability", "Traceability"],
-          ["settings", "Settings"],
         ].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} className={`pd-tab${tab === key ? " pd-tab--active" : ""}`}>
             {key === "review" && testCounts.draft > 0 && (
@@ -598,15 +596,6 @@ export default function ProjectDetail() {
       {/* ── TRACEABILITY TAB ── */}
       {tab === "traceability" && (
         <TraceabilityTab traceability={traceability} traceLoading={traceLoading} />
-      )}
-
-      {/* ── SETTINGS TAB (AUTO-012b: Quality Gates) ── */}
-      {tab === "settings" && (
-        <QualityGatesPanel
-          projectId={id}
-          canEdit={canEdit}
-          onToast={(msg, type) => showToast(msg, type)}
-        />
       )}
 
       <RunToast msg={toast.msg} type={toast.type} visible={toast.visible} onViewRun={toast.showLink} runId={toast.runId} />

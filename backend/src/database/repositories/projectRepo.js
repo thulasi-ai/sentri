@@ -19,7 +19,6 @@ function rowToProject(row) {
   return {
     ...row,
     credentials: row.credentials ? JSON.parse(row.credentials) : null,
-    qualityGates: row.qualityGates ? JSON.parse(row.qualityGates) : null,
   };
 }
 
@@ -30,7 +29,6 @@ function projectToRow(p) {
     url: p.url || "",
     credentials: p.credentials ? JSON.stringify(p.credentials) : null,
     status: p.status || "idle",
-    qualityGates: p.qualityGates ? JSON.stringify(p.qualityGates) : null,
     createdAt: p.createdAt,
   };
 }
@@ -93,8 +91,8 @@ export function create(project) {
   const row = projectToRow(project);
   row.workspaceId = project.workspaceId || null;
   db.prepare(`
-    INSERT INTO projects (id, name, url, credentials, status, qualityGates, createdAt, workspaceId)
-    VALUES (@id, @name, @url, @credentials, @status, @qualityGates, @createdAt, @workspaceId)
+    INSERT INTO projects (id, name, url, credentials, status, createdAt, workspaceId)
+    VALUES (@id, @name, @url, @credentials, @status, @createdAt, @workspaceId)
   `).run(row);
 }
 
@@ -105,12 +103,12 @@ export function create(project) {
  */
 export function update(id, fields) {
   const db = getDatabase();
-  const allowed = ["name", "url", "credentials", "status", "qualityGates"];
+  const allowed = ["name", "url", "credentials", "status"];
   const sets = [];
   const params = { id };
   for (const key of allowed) {
     if (key in fields) {
-      const val = (key === "credentials" || key === "qualityGates") && fields[key]
+      const val = key === "credentials" && fields[key]
         ? JSON.stringify(fields[key])
         : fields[key];
       sets.push(`${key} = @${key}`);
