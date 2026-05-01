@@ -10,7 +10,7 @@
 
 ## 🚨 10-Day Production Readiness Plan
 
-> **Production target:** ship in 10 days. `INF-006` ✅ shipped in PR #1, clearing the last 🔴 Blocker; every 🟡 High item in Phase 2 is also already ✅. The plan below is sequenced so the first few days clear Golden E2E and AUTO-012, leaving slack for review-thread cleanup and a stabilisation window before tag.
+> **Production target:** ship in 10 days. `INF-006` ✅ shipped in PR #1, clearing the last 🔴 Blocker; `AUTO-012` ✅ (full backend + UI) shipped in PR #2, including per-project `qualityGates` config, run-time evaluation, gate badges, and trigger-response plumbing. Every 🟡 High item in Phase 2 is also already ✅. The plan below is sequenced so the first few days clear Golden E2E and DIF-015b Gap 2, leaving slack for review-thread cleanup and a stabilisation window before tag.
 
 | Day | Focus | Owner |
 |---|---|---|
@@ -35,7 +35,7 @@
 
 ### Why this is the next priority
 
-`AUTO-012` ✅ shipped in PR #2 — backend slice (CRUD endpoints, evaluator, repo persistence, migration, trigger-response plumbing, tests). The remaining UI panel + GitHub Action exit-code wiring are carried over as **AUTO-012b** (see Follow-ups below) so the next PR isn't blocked on frontend scope. DIF-015b Gap 2 is the highest-value remaining sprint item: small, contained, zero-overlap with AUTO-012b — unblocks DIF-015b flipping to ✅ Complete in ROADMAP.md once Gap 3 also ships.
+`AUTO-012` ✅ shipped in PR #2 — full backend (CRUD endpoints, evaluator, repo persistence, migration `014_quality_gates.sql`, trigger-response plumbing, tests), UI (`QualityGatesPanel` under ProjectDetail → Settings, `GateBadge` on Runs list, ProjectDetail → Runs tab, RunDetail header, plus an inline violation panel on RunDetail), **and** the CI-consumer GitHub Actions / GitLab CI snippets in `docs/guide/ci-cd-triggers.md` that read `gateResult.passed` and exit non-zero on violation. No outstanding carry-over. DIF-015b Gap 2 is the highest-value remaining sprint item: small, contained — unblocks DIF-015b flipping to ✅ Complete in ROADMAP.md once Gap 3 also ships.
 
 ### What to build
 
@@ -66,17 +66,6 @@
 
 ---
 
-## 🔁 Follow-ups — carry-over from shipped PRs
-
-### AUTO-012c — GitHub Action gate exit-code example
-**Effort:** XS | **Priority:** 🔵 Medium | **Dependencies:** AUTO-012 + AUTO-012b ✅ (PR #2)
-
-UI panel and per-run gate badge shipped in PR #2 alongside the backend. The remaining slice is CI-consumer-side only: a copy-pasteable `.github/workflows/` snippet or `docs/` example that polls the trigger status endpoint, reads `gateResult.passed`, and exits non-zero on violation. Backend already returns `gateResult` in both the trigger status response and the callback payload — this is documentation, not new code.
-
-**Files:** `docs/guide/ci-cd.md` (new section) or `.github/workflows/sentri-quality-gate.example.yml`.
-
----
-
 ## ⏭ Queue (next 3 PRs after current)
 
 ### 2 · AUTO-017 — Performance budget testing (Web Vitals)
@@ -86,12 +75,19 @@ Capture Web Vitals (LCP, CLS, INP, TTFB) per page during runs and compare agains
 
 **Files:** `backend/src/runner/pageCapture.js` · `backend/src/testRunner.js` · `frontend/src/components/run/StepResultsView.jsx`
 
-### 4 · DIF-005 — Embedded Playwright trace viewer
+### 3 · DIF-005 — Embedded Playwright trace viewer
 **Effort:** M | **Priority:** 🟢 Differentiator | **Dependencies:** none
 
 Copy the Playwright trace viewer build (`@playwright/test/lib/trace/viewer/`) into `public/trace-viewer/` and serve it at `/trace-viewer/`. The Run Detail page links to `/trace-viewer/?trace=<artifact-signed-url>` to open the trace inline in an iframe — eliminating the local-Playwright-install friction users hit today when debugging a failure. Highest-value remaining DIF item with no dependencies.
 
 **Files:** `backend/src/middleware/appSetup.js` · `frontend/src/pages/RunDetail.jsx` · build tooling (copy trace assets on `npm install`)
+
+### 4 · AUTO-019 — Run diffing: per-test comparison across runs
+**Effort:** M | **Priority:** 🔵 Medium | **Dependencies:** none
+
+Compare two runs' per-test results side-by-side and highlight tests that flipped status (passed → failed, failed → passed, newly added, removed). Surface as a "Compare" action on the Run Detail page that opens a diff view against the previous run by default, with a picker to choose any prior run.
+
+**Files:** `backend/src/routes/runs.js` (new `GET /runs/:runId/compare/:otherRunId`) · `frontend/src/pages/RunDetail.jsx` · new `frontend/src/components/run/RunCompareView.jsx`
 
 ---
 
@@ -101,13 +97,10 @@ These can be picked up by a second engineer alongside the current PR without fil
 
 | ID | Title | Effort | Shared files? |
 |----|-------|--------|---------------|
-| **AUTO-012b** | **Quality Gates UI panel + GitHub Action exit code** | **S** | **Frontend + docs only — zero overlap with DIF-015b Gap 2 (current PR)** |
 | DIF-015b Gap 3 | Recorder selectorGenerator: iframe + shadow-DOM traversal | M | `backend/src/runner/recorder.js` — conflicts with current PR, pick up after |
 | AUTO-019 | Run diffing: per-test comparison across runs | M | None |
 
-> **AUTO-012b priority:** ship this alongside DIF-015b Gap 2 (current PR) — the backend already returns `gateResult` in both the trigger status response and the callback payload, so the UI panel + CI-consumer exit code are the last mile before teams can actually enforce gates in CI. Zero file overlap with the current PR (frontend + docs only).
->
-> Why these aren't promoted to "Current PR": DIF-015b Gap 2 is the sprint target. AUTO-012b is tracked here so it doesn't get lost — pick it up alongside Gap 2 if a second agent has bandwidth (zero file overlap; Gap 2 only touches `backend/src/runner/recorder.js` + `backend/tests/recorder.test.js`).
+> Why these aren't promoted to "Current PR": DIF-015b Gap 2 is the sprint target. AUTO-019 is tracked here so it doesn't get lost — pick it up alongside Gap 2 if a second agent has bandwidth (zero file overlap; Gap 2 only touches `backend/src/runner/recorder.js` + `backend/tests/recorder.test.js`).
 
 ---
 
@@ -115,9 +108,8 @@ These can be picked up by a second engineer alongside the current PR without fil
 
 | ID | Title | PR |
 |----|-------|----|
-| AUTO-012 (backend) | SLA / quality gate enforcement — per-project `qualityGates` config, run-time evaluator, `gateResult` on runs + trigger responses (UI + GH Action tracked as AUTO-012b) | #2 |
+| AUTO-012 | SLA / quality gate enforcement — per-project `qualityGates` config, run-time evaluator, `gateResult` on runs + trigger responses, `QualityGatesPanel` under ProjectDetail → Settings, `<GateBadge>` on Runs list / ProjectDetail Runs tab / RunDetail header, inline violation panel on RunDetail, GH Actions + GitLab CI examples in `docs/guide/ci-cd-triggers.md` that exit non-zero on `gateResult.passed === false` | #2 |
 | INF-006 | Persistent storage on hosted deployments (Render disk blueprint + ephemeral-storage warning) | #1 |
 | ENH-036 + ENH-036b | Project credential editing (`PATCH /projects/:id`) + auto-detect login form fields (semantic-first locator waterfall) | #1 |
-| AUTO-016b | Frontend CrawlView a11y panel + dashboard offenders rollup | #1 |
 
 *Full completed list → ROADMAP.md § Completed Work*
