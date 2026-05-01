@@ -56,8 +56,10 @@ test.describe('Sentri UI smoke (login route)', () => {
     expect(loginResponse.status()).toBe(200);
 
     await page.goto('/login');
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
+    // Use textbox role to avoid matching the "Show password" eye-icon button
+    // (its aria-label="Show password" satisfies getByLabel(/password/i) too).
+    await page.getByRole('textbox', { name: /email/i }).fill(email);
+    await page.getByRole('textbox', { name: /password/i }).fill(password);
     await page.getByRole('button', { name: /sign in|login/i }).first().click();
 
     await expect(page).toHaveURL(/\/dashboard/);
