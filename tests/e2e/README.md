@@ -1,13 +1,15 @@
 # Sentri E2E (Playwright)
 
 ## Scope
-This suite validates:
-- API auth + verification lifecycle
-- API full functional flow (project + test CRUD + approval)
-- API negative validations for project/test payloads
-- API session security (CSRF enforcement + logout revocation)
-- Functional area contracts: crawl, generate, recorder, run-all orchestration, AI fix apply, AI chat
-- UI login-route smoke checks (when frontend is reachable)
+
+**UI-first.** Every flow a real user touches via the browser is automated through `--project=ui-chromium` (Playwright `page` fixture, real DOM, role-based selectors). API-only specs are the **fallback** — allowed only when the flow has no UI surface, the UI isn't shipped yet, or the UI flow is prohibitively flaky/slow. See [`COVERAGE.md`](./COVERAGE.md) § UI-first policy for the full rule, and the per-row matrix for what's currently UI-driven vs. API-only.
+
+Today the suite covers:
+- **UI smoke** — login route renders + invalid-credentials error state (`ui-smoke.spec.mjs`)
+- **API auth lifecycle** (registration, verification, login negative path) — fallback while UI verify-email + login-success specs are written
+- **API full functional flow** (project + test CRUD + approval) — fallback while ProjectDetail / Tests page UI specs are written
+- **API negative validations + session security** (CSRF, logout revocation) — appropriate as API-only (no user-facing UI for header tampering)
+- **Functional-area endpoint contracts** (crawl, generate, recorder, run-all, AI fix, AI chat) — fallback while corresponding modal/page UI specs are written
 
 > For **manual** end-to-end validation (Golden E2E happy path + per-feature happy paths and negatives), see [`QA.md`](../../QA.md) at the repo root. The Playwright suite below is the automated complement — both should pass before release.
 
