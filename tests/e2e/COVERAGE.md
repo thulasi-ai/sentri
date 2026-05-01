@@ -29,7 +29,7 @@ Pick the top item. Each is sized to fit one PR (1–3 specs, ≤ 200 LOC each), 
 
 1. **Tests review — approve / reject + ReviewModal** (`QA.md` §7 step 13–15) → new `tests/e2e/specs/tests-review-ui.spec.mjs`: seed Draft tests via API, then drive the Tests page filter pills + bulk-approve toolbar via `getByRole('button', { name: /approve/i })`. **UI-only.**
 2. **Run regression — RunRegressionModal + live RunDetail** (`QA.md` §9 step 20–22) → new `tests/e2e/specs/run-regression-ui.spec.mjs`: open the modal, set `parallelWorkers: 2`, click Run, assert RunDetail SSE log streams in and the per-test status badges update. **UI-only** (SSE is the user surface; consume it via `page` not `request`).
-3. **Quality gates — Settings panel save + RunDetail badge** (`QA.md` § Quality Gates) → new `tests/e2e/specs/quality-gates-ui.spec.mjs`: drive ProjectDetail → Settings → Quality Gates form, save `{ minPassRate: 95 }`, trigger a sub-gate run, assert the red `Gates ✗` badge + inline violation panel render on RunDetail. **UI-only.**
+3. **Quality gates — RunDetail badge + violation panel** (`QA.md` § Quality Gates) → extend existing `tests/e2e/specs/quality-gates-ui.spec.mjs` (Settings panel save already covered): trigger a sub-gate run, assert the red `Gates ✗` badge + inline violation panel render on RunDetail. **UI-only.**
 4. **Workspace — invite collaborator UI flow** (`QA.md` §2 step 4) → new `tests/e2e/specs/workspace-invite-ui.spec.mjs`: drive Settings → Members invite form, assert pending invite appears, then accept-link flow in incognito confirms membership. **UI-only.**
 5. **Crawl — link mode** (`QA.md` §4 step 6) → new `tests/e2e/specs/crawl-link-ui.spec.mjs`: drive ProjectDetail → CrawlProjectModal → Start, assert live progress updates and a completed badge in the run row. **UI-only.**
 
@@ -92,7 +92,7 @@ Per-feature happy paths that aren't part of the Golden journey. Can ship indepen
 | 🧾 Audit Log | `userId` / `userName` per activity | 🟥 |
 | 🔔 Notifications | At-least-one-channel validation | 🟥 |
 | 🔒 Security | IDOR + cross-workspace 403 | 🟥 (UI: outsider hitting another workspace URL → redirect / 403 page) |
-| 🚦 Quality Gates (AUTO-012) | CRUD + evaluator + trigger response | 🟥 |
+| 🚦 Quality Gates (AUTO-012) | CRUD + evaluator + trigger response | 🟨 (UI: `quality-gates-ui.spec.mjs` covers Settings panel save round-trip; RunDetail gate badge + violation panel still pending — needs a real sub-gate run to seed `gateResult.passed === false`) |
 | 📑 Reports / PDF | Dashboard PDF export | 🟥 |
 | 🆕 New Project page | SSRF block on private URLs | 🟥 |
 | 📋 Runs list | Filter by status / project | 🟥 |
