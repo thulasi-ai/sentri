@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Recorder (DIF-015b Gap 2)**: `selectorGenerator()` now quality-scores `data-testid` values before ranking selectors. Semantic IDs (e.g. `submit-button`) still win over role+name, but noise-like IDs (numeric-only, random-looking `el_`/`comp-`/`t-` + hex tails, or very long unseparated tokens) are demoted below role+name while remaining above the bare CSS fallback. This keeps recorder output stable for generated IDs without regressing pages that only expose a noisy testid anchor. (#TBD)
 - **E2E Coverage**: Added UI login→dashboard automation in `tests/e2e/specs/ui-smoke.spec.mjs` using verified-user API scaffolding plus DOM assertions for `/dashboard`, Dashboard heading, and workspace visibility; kept `tests/e2e/COVERAGE.md` auth happy-path row pending (🟥) until CI Playwright smoke is green, and annotated `QA.md` to match. (#TBD)
 - **E2E Coverage**: Added `tests/e2e/specs/project-create-ui.spec.mjs` driving the `/projects/new` form end-to-end (name + URL → redirect to `/projects/:id` → project visible in the `/projects` list) per `QA.md` §3 step 5. Flipped the matching row in `tests/e2e/COVERAGE.md` to ✅ and promoted the next backlog item (tests review UI). (#TBD)
 

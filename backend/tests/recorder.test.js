@@ -794,6 +794,28 @@ await (async () => {
     assert.match(src, /isContentEditable/);
   });
 
+
+  await asyncTest("RECORDER_SCRIPT demotes noisy testids below role+name but above CSS fallback", async () => {
+    const fs = await import("node:fs");
+    const url = await import("node:url");
+    const here = url.fileURLToPath(new URL(".", import.meta.url));
+    const src = fs.readFileSync(`${here}../src/runner/recorder.js`, "utf8");
+    const scriptStart = src.indexOf("const RECORDER_SCRIPT = `");
+    const scriptEnd = src.indexOf("`;", scriptStart);
+    const scriptBody = src.slice(scriptStart, scriptEnd);
+
+    assert.match(scriptBody, /function\s+isNoisyTestId\(value\)/);
+    assert.match(scriptBody, /\/\^\\d\+\$\/\.test\(v\)/, "all-numeric testid heuristic must exist");
+    assert.match(scriptBody, /\/\^\(\?:el_\|comp-\|t-\)\[a-z0-9_\-\]\*\[0-9a-f\]\{4,\}\$\/i/);
+    assert.match(scriptBody, /v\.length\s*>\s*30\s*&&\s*!\/\[-_:\.\]\/\.test\(v\)/);
+
+    const semanticIdx = scriptBody.indexOf("if (testId && !isNoisyTestId(testId))");
+    const roleIdx = scriptBody.indexOf("if (role && label)");
+    const noisyIdx = scriptBody.indexOf("if (testId) return 'data-testid='");
+    assert.ok(semanticIdx >= 0 && roleIdx > semanticIdx, "semantic testids should be preferred above role+name");
+    assert.ok(noisyIdx > roleIdx, "noisy testids should be demoted below role+name");
+  });
+
   await asyncTest("RECORDER_SCRIPT source uses TIMINGS interpolation (single source of truth)", async () => {
     // Regression guard for the TIMINGS → RECORDER_SCRIPT refactor. The
     // script's setTimeout durations (click defer, hover dwell, fill

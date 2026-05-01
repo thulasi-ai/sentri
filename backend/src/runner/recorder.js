@@ -241,13 +241,23 @@ const RECORDER_SCRIPT = `
     return cssSel + " >> nth=" + idx;
   }
 
+  function isNoisyTestId(value) {
+    const v = (value || "").trim();
+    if (!v) return true;
+    if (/^\d+$/.test(v)) return true;
+    if (/^(?:el_|comp-|t-)[a-z0-9_-]*[0-9a-f]{4,}$/i.test(v)) return true;
+    if (v.length > 30 && !/[-_:.]/.test(v)) return true;
+    return false;
+  }
+
   function selectorGenerator(el) {
     if (!el || el.nodeType !== 1) return "";
-    const testId = el.getAttribute("data-testid") || el.getAttribute("data-test-id");
-    if (testId) return 'data-testid=' + JSON.stringify(testId.trim());
+    const testId = (el.getAttribute("data-testid") || el.getAttribute("data-test-id") || "").trim();
     const role = el.getAttribute("role") || roleFromTag(el.tagName);
     const label = (el.getAttribute("aria-label") || "").trim().slice(0, 80);
+    if (testId && !isNoisyTestId(testId)) return 'data-testid=' + JSON.stringify(testId);
     if (role && label) return 'role=' + role + '[name=' + JSON.stringify(label) + ']';
+    if (testId) return 'data-testid=' + JSON.stringify(testId);
     if ((el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") && el.labels && el.labels[0]) {
       const l = (el.labels[0].innerText || el.labels[0].textContent || "").trim().replace(/\\s+/g, " ").slice(0, 80);
       if (l) return 'label=' + JSON.stringify(l);
