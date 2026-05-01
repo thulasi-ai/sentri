@@ -269,7 +269,7 @@ const RECORDER_SCRIPT = `
     return cssSel + " >> nth=" + idx;
   }
 
-  // DIF-015b Gap 2 — interpolated from the Node-side `isNoisyTestId()` export
+  // DIF-015b Gap 2 — interpolated from the Node-side \`isNoisyTestId()\` export
   // so the heuristic has a single source of truth across the Node boundary.
   // Unit tests exercise the Node-side function with fixture values; this
   // line keeps the in-page copy byte-identical without drift risk.
