@@ -30,11 +30,18 @@ test.describe('Project create UI (QA.md §3 step 5)', () => {
     const { email, password } = await registerUser(request);
     const user = userRepo.getByEmail(email);
     expect(user).toBeTruthy();
-    const tokenRow = verificationTokenRepo.getUnusedByUserId(user.id);
-    expect(tokenRow?.token).toBeTruthy();
 
-    const verifyResponse = await api.call('get', `/api/v1/auth/verify?token=${encodeURIComponent(tokenRow.token)}`);
-    expect(verifyResponse.status()).toBe(200);
+    // CI sets SKIP_EMAIL_VERIFICATION=true (see .github/workflows/ci.yml), in which
+    // case `backend/src/routes/auth.js` short-circuits before creating a
+    // verificationTokens row and the user is already `emailVerified=1`. Only walk
+    // the token → /verify round-trip when verification is actually pending.
+    const tokenRow = verificationTokenRepo.getUnusedByUserId(user.id);
+    if (tokenRow?.token) {
+      const verifyResponse = await api.call('get', `/api/v1/auth/verify?token=${encodeURIComponent(tokenRow.token)}`);
+      expect(verifyResponse.status()).toBe(200);
+    } else {
+      expect(user.emailVerified).toBeTruthy();
+    }
 
     const loginResponse = await loginWithRetry(request, email, password);
     if (loginResponse.status() === 429) test.skip(true, 'Rate-limited in shared local environment');
