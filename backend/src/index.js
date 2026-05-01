@@ -22,13 +22,11 @@
  */
 
 import dotenv from "dotenv";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { getDatabase, closeDatabase } from "./database/sqlite.js";
 import { migrateFromJsonIfNeeded } from "./database/migrate.js";
 import * as runRepo from "./database/repositories/runRepo.js";
 import { formatLogLine, structuredLog } from "./utils/logFormatter.js";
+import { warnIfEphemeralStorage } from "./utils/ephemeralStorage.js";
 import { loadKeysFromDatabase } from "./aiProvider.js";
 import { trackTelemetry } from "./utils/telemetry.js";
 import { initScheduler, stopAllTasks } from "./scheduler.js";
@@ -66,44 +64,6 @@ export { runAbortControllers } from "./utils/runWithAbort.js";
 import { runAbortControllers } from "./utils/runWithAbort.js";
 
 dotenv.config();
-
-function warnIfEphemeralStorage() {
-  if (process.env.DATABASE_URL) return;
-
-  // Derive the default DB path relative to this file so it matches the SQLite
-  // adapter's own default (`backend/src/database/adapters/sqlite-adapter.js`).
-  // Using process.cwd() here would produce `<cwd>/backend/data/...` in Docker
-  // (WORKDIR /app → /app/backend/data vs the adapter's /app/data) and
-  // `backend/backend/data/...` in local dev (`cd backend && npm run dev`),
-  // triggering the warning as a false positive and writing the boot marker to
-  // the wrong directory.
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  const rawDbPath = process.env.DB_PATH || path.join(__dirname, "..", "data", "sentri.db");
-  const dbPath = path.resolve(rawDbPath);
-  const markerPath = `${dbPath}.boot-marker`;
-  const isTmpPath = dbPath.startsWith("/tmp/") || dbPath === "/tmp";
-  let hasPriorProcessWrite = false;
-
-  try {
-    const markerStat = fs.statSync(markerPath);
-    hasPriorProcessWrite = Date.now() - markerStat.mtimeMs > 10_000;
-  } catch {
-    hasPriorProcessWrite = false;
-  }
-
-  if (isTmpPath || !hasPriorProcessWrite) {
-    console.warn(formatLogLine("warn", null, `[db] DB path appears ephemeral — data will be lost on redeploy (path: ${dbPath})`));
-  }
-
-  try {
-    fs.mkdirSync(path.dirname(markerPath), { recursive: true });
-    fs.writeFileSync(markerPath, new Date().toISOString());
-  } catch {
-    // Best-effort marker write only.
-  }
-}
-
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // Prevent the server from dying on unhandled errors.
