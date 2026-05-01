@@ -30,6 +30,7 @@ import { launchBrowser, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, NAVIGATION_TIMEOUT } fr
 import { startScreencast } from "./screencast.js";
 import { formatLogLine } from "../utils/logFormatter.js";
 import * as runRepo from "../database/repositories/runRepo.js";
+import { buildInjectedBootstrapScript } from "./playwrightSelectorGenerator.js";
 
 /**
  * Tunable timing constants for the recorder. Centralised so reviewers can
@@ -121,21 +122,19 @@ const INTERACTION_KINDS = new Set([
 ]);
 
 /**
- * DIF-015b Gap 2 — quality-scores a `data-testid` value. Returns `true` when
- * the value looks machine-generated / random (numeric-only, `el_` / `comp-` /
- * `t-` prefix + hex tail, or a long unseparated token), in which case
- * `selectorGenerator()` inside `RECORDER_SCRIPT` demotes the testid below
- * `role+name` so semantic locators win on pages that only expose a noisy
- * testid anchor alongside a good aria-label. Still preferred over the bare
- * CSS fallback so we don't regress pages whose only stable hook is a noisy
- * testid.
+ * DIF-015b — quality-scores a `data-testid` value. Returns `true` when the
+ * value looks machine-generated / random (numeric-only, `el_` / `comp-` /
+ * `t-` prefix + hex tail, or a long unseparated token).
  *
- * Defined at module scope (rather than inline inside the template string)
- * so the same function runs **both** in Node (for unit tests that feed in
- * fixture values per NEXT.md § Acceptance criteria) and in the browser
- * (where it's interpolated into `RECORDER_SCRIPT` via `.toString()`). This
- * mirrors the `TIMINGS` single-source-of-truth pattern above and prevents
- * drift between the Node-tested heuristic and the in-page implementation.
+ * **This is only used by the hand-rolled fallback selectorGenerator** that
+ * runs when Playwright's `InjectedScript` source cannot be loaded (missing
+ * `playwright-core` install, Playwright bumped to a version with a different
+ * injected-bundle layout, etc.). The primary path delegates to Playwright's
+ * own selector generator which has its own — more sophisticated — noise
+ * scoring built in.
+ *
+ * Exported for unit tests that exercise the fallback path directly; callers
+ * outside the fallback should not depend on this heuristic.
  *
  * @param {string} value - Raw `data-testid` attribute value.
  * @returns {boolean} `true` when the value looks noisy and should be demoted.
@@ -278,6 +277,26 @@ const RECORDER_SCRIPT = `
 
   function selectorGenerator(el) {
     if (!el || el.nodeType !== 1) return "";
+    // Primary path: delegate to Playwright's own InjectedScript-based
+    // selector generator when its bootstrap script ran successfully. This
+    // is the same algorithm Playwright's `codegen` tool produces and
+    // covers ancestor scoring, noise-testid demotion, shadow-DOM
+    // traversal, and iframe locator chains — none of which the fallback
+    // below handles. If Playwright returns an empty string we fall
+    // through to the local heuristic so a single misclassified element
+    // doesn't break the recording.
+    if (typeof window.__playwrightSelector === "function") {
+      try {
+        const pw = window.__playwrightSelector(el);
+        if (pw && typeof pw === "string") return pw;
+      } catch (_) { /* fall through to hand-rolled fallback */ }
+    }
+    // Fallback path — runs when Playwright's InjectedScript source could
+    // not be loaded at server start, or its API surface drifted in a
+    // version bump and the bootstrap left __playwrightSelector
+    // unpopulated. Order matches the documented priority in the module
+    // JSDoc; the testid noise heuristic only matters here because
+    // Playwright's generator already handles it on the primary path.
     const testId = (el.getAttribute("data-testid") || el.getAttribute("data-test-id") || "").trim();
     const role = el.getAttribute("role") || roleFromTag(el.tagName);
     const label = (el.getAttribute("aria-label") || "").trim().slice(0, 80);
@@ -1089,6 +1108,16 @@ export async function startRecording({ sessionId, projectId, startUrl }) {
       }
       session.actions.push(row);
     });
+    // Inject Playwright's own InjectedScript bootstrap before our
+    // recorder script so `window.__playwrightSelector` is populated by
+    // the time selectorGenerator() runs on the first user interaction.
+    // `addInitScript` calls run in registration order, and the empty
+    // string from `buildInjectedBootstrapScript()` (when the bundle
+    // can't be loaded) is a no-op — addInitScript accepts empty strings
+    // without complaint, but skip the call to keep the page-init log
+    // clean.
+    const bootstrap = buildInjectedBootstrapScript();
+    if (bootstrap) await context.addInitScript(bootstrap);
     await context.addInitScript(RECORDER_SCRIPT);
 
     // Navigate to the starting URL and record it as the first action.

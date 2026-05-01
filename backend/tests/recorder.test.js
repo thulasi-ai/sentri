@@ -795,12 +795,16 @@ await (async () => {
   });
 
 
-  await asyncTest("isNoisyTestId: classifies NEXT.md § Acceptance fixtures correctly", async () => {
-    // Behavioural fixtures for the three heuristic branches NEXT.md § What to
-    // build names explicitly — numeric-only, `el_`/`comp-`/`t-` + hex tail,
-    // length > 30 with no separators. Exercised via the Node-side export so
-    // a regression in the heuristic fails here loud-and-clear instead of only
-    // surfacing as a "selector quality dropped" regression in the wild.
+  await asyncTest("isNoisyTestId (fallback path): classifies NEXT.md § Acceptance fixtures correctly", async () => {
+    // The primary recorder path now delegates to Playwright's own
+    // InjectedScript-based selector generator (which has its own
+    // noise-testid scoring built in). `isNoisyTestId` only runs on the
+    // hand-rolled fallback path that activates when Playwright's
+    // injected-bundle source can't be loaded. These fixtures lock down
+    // that fallback so a degraded recorder still demotes generated
+    // testids correctly — covering NEXT.md § What to build's three
+    // heuristic branches: numeric-only, `el_`/`comp-`/`t-` + hex tail,
+    // length > 30 with no separators.
     // Noisy — short prefix + hex tail (NEXT.md Acceptance #1).
     assert.equal(isNoisyTestId("el_abc123"), true, "el_ + hex tail is noisy");
     assert.equal(isNoisyTestId("comp-f0e1d2c3"), true, "comp- + hex tail is noisy");
@@ -831,13 +835,16 @@ await (async () => {
     assert.equal(isNoisyTestId("el_ok"), false, "el_ + short non-hex tail is semantic");
   });
 
-  await asyncTest("selectorGenerator ordering matches NEXT.md § Acceptance (semantic > role+name > noisy > css)", async () => {
-    // Behavioural assertion on the selector priority chain. We can't run the
-    // in-page `selectorGenerator` against a real DOM without jsdom (which
-    // isn't a project dep), so simulate each Acceptance criterion by feeding
-    // the in-page heuristic's decision points (`testId`, `role`, `label`)
-    // through the same branching logic the script uses. This locks down the
-    // priority order the spec requires.
+  await asyncTest("fallback selectorGenerator ordering: semantic > role+name > noisy > css", async () => {
+    // Behavioural assertion on the **fallback** selector priority chain
+    // (the path that runs when Playwright's InjectedScript bootstrap
+    // didn't populate `__playwrightSelector`). We can't run the in-page
+    // selectorGenerator against a real DOM without jsdom (not a project
+    // dep), so simulate by feeding the fallback's decision points
+    // (`testId`, `role`, `label`) through the same branching logic the
+    // injected script uses. The primary path delegates to Playwright's
+    // own generator and is exercised by the Playwright-source
+    // integration test below.
     function pick({ testId, role, label, cssFallback }) {
       const t = (testId || "").trim();
       if (t && !isNoisyTestId(t)) return `data-testid=${JSON.stringify(t)}`;
@@ -874,7 +881,7 @@ await (async () => {
     );
   });
 
-  await asyncTest("RECORDER_SCRIPT demotes noisy testids below role+name but above CSS fallback", async () => {
+  await asyncTest("RECORDER_SCRIPT delegates to Playwright's __playwrightSelector first, falls back to local chain", async () => {
     const fs = await import("node:fs");
     const url = await import("node:url");
     const here = url.fileURLToPath(new URL(".", import.meta.url));
@@ -883,16 +890,67 @@ await (async () => {
     const scriptEnd = src.indexOf("`;", scriptStart);
     const scriptBody = src.slice(scriptStart, scriptEnd);
 
-    assert.match(scriptBody, /function\s+isNoisyTestId\(value\)/);
-    assert.match(scriptBody, /\/\^\\d\+\$\/\.test\(v\)/, "all-numeric testid heuristic must exist");
+    // Primary path — delegate to Playwright's InjectedScript-based generator.
+    const pwIdx = scriptBody.indexOf("window.__playwrightSelector");
+    assert.ok(pwIdx >= 0, "selectorGenerator must consult window.__playwrightSelector first");
+
+    // Fallback path heuristics still present (they run when the
+    // Playwright bundle could not be loaded).
+    assert.match(scriptBody, /\/\^\\d\+\$\/\.test\(v\)/, "all-numeric testid heuristic must exist in fallback");
     assert.match(scriptBody, /\/\^\(\?:el_\|comp-\|t-\)\[a-z0-9_\-\]\*\[0-9a-f\]\{4,\}\$\/i/);
     assert.match(scriptBody, /v\.length\s*>\s*30\s*&&\s*!\/\[-_:\.\]\/\.test\(v\)/);
 
+    // Fallback ordering still semantic > role+name > noisy > css.
     const semanticIdx = scriptBody.indexOf("if (testId && !isNoisyTestId(testId))");
     const roleIdx = scriptBody.indexOf("if (role && label)");
     const noisyIdx = scriptBody.indexOf("if (testId) return 'data-testid='");
-    assert.ok(semanticIdx >= 0 && roleIdx > semanticIdx, "semantic testids should be preferred above role+name");
-    assert.ok(noisyIdx > roleIdx, "noisy testids should be demoted below role+name");
+    assert.ok(semanticIdx >= 0 && roleIdx > semanticIdx, "semantic testids should be preferred above role+name in fallback");
+    assert.ok(noisyIdx > roleIdx, "noisy testids should be demoted below role+name in fallback");
+    // Sanity: the Playwright delegation must run **before** the fallback
+    // chain — otherwise we'd pay the cost of the local heuristic on
+    // every interaction even when Playwright's generator was available.
+    assert.ok(pwIdx < semanticIdx, "Playwright delegation must run before fallback heuristic");
+  });
+
+  await asyncTest("playwrightSelectorGenerator: loader degrades gracefully when source is missing", async () => {
+    // Contract test for the loader. We can't guarantee that the test
+    // environment has `playwright-core`'s injected bundle resolvable
+    // (some CI sandboxes strip dev deps), so the assertion is the
+    // weaker, always-safe one: the loader must return `{ available:
+    // boolean, source: string|null }` and never throw. If the bundle
+    // resolves, `source` must be a non-empty string; if not, `source`
+    // must be null and `available` must be false.
+    const { loadPlaywrightInjectedScriptSource, _testResetCache } = await import("../src/runner/playwrightSelectorGenerator.js");
+    _testResetCache();
+    const result = loadPlaywrightInjectedScriptSource();
+    assert.equal(typeof result.available, "boolean");
+    if (result.available) {
+      assert.equal(typeof result.source, "string");
+      assert.ok(result.source.length > 0, "loaded source must be non-empty");
+    } else {
+      assert.equal(result.source, null);
+      assert.equal(typeof result.reason, "string", "missing-source path must report a reason");
+    }
+  });
+
+  await asyncTest("playwrightSelectorGenerator: bootstrap is empty when source is missing, non-empty when present", async () => {
+    // The bootstrap return value is what gets handed to `addInitScript`.
+    // When the loader can't resolve the bundle, the bootstrap must be
+    // exactly the empty string so `startRecording` can short-circuit
+    // the addInitScript call. When it can, the bootstrap must contain
+    // the public entry point name we documented (`__playwrightSelector`)
+    // so the recorder script's delegation finds it.
+    const { buildInjectedBootstrapScript, loadPlaywrightInjectedScriptSource, _testResetCache } = await import("../src/runner/playwrightSelectorGenerator.js");
+    _testResetCache();
+    const loaded = loadPlaywrightInjectedScriptSource();
+    _testResetCache();
+    const bootstrap = buildInjectedBootstrapScript();
+    if (loaded.available) {
+      assert.ok(bootstrap.length > 0, "bootstrap must be non-empty when source is loaded");
+      assert.match(bootstrap, /window\.__playwrightSelector/, "bootstrap must expose __playwrightSelector to the page");
+    } else {
+      assert.equal(bootstrap, "", "bootstrap must be empty string when source is missing");
+    }
   });
 
   await asyncTest("RECORDER_SCRIPT source uses TIMINGS interpolation (single source of truth)", async () => {
