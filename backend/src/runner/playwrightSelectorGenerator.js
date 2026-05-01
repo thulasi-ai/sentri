@@ -34,6 +34,7 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import { createRequire } from "node:module";
 import { formatLogLine } from "../utils/logFormatter.js";
 
@@ -68,28 +69,37 @@ export function loadPlaywrightInjectedScriptSource() {
   if (cached) return cached;
 
   const require = createRequire(import.meta.url);
-  // Candidate paths, in preference order. `injectedScriptSource.js` is the
-  // self-contained bundle Playwright uses for its own page injection and is
-  // the safest to drop into `addInitScript`. The unbundled `selectorGenerator.js`
-  // is listed only as a breadcrumb for future maintainers — it cannot be
-  // injected stand-alone because it `require()`s sibling modules that
-  // don't exist in the page context.
-  const candidates = [
-    "playwright-core/lib/server/injected/injectedScriptSource.js",
+  // Resolution must dodge `playwright-core`'s `package.json` "exports" field,
+  // which gates every internal path under `lib/server/injected/*` and makes
+  // `require.resolve("playwright-core/lib/server/injected/injectedScriptSource.js")`
+  // throw `ERR_PACKAGE_PATH_NOT_EXPORTED`. The package's own `package.json`
+  // **is** always exported, though, so we resolve that, walk to the package
+  // root, and read the bundled IIFE off disk directly — `fs.readFileSync`
+  // does not consult the exports map. The bundle is internal and not
+  // covered by Playwright's semver, so this whole branch is wrapped in
+  // try/catch and falls through to `available: false` on any failure.
+  const candidatePaths = [
+    "lib/server/injected/injectedScriptSource.js",
   ];
 
-  for (const spec of candidates) {
-    try {
-      const resolved = require.resolve(spec);
-      const source = fs.readFileSync(resolved, "utf8");
-      if (source && source.length > 0) {
-        cached = { source, available: true };
-        return cached;
+  try {
+    const pkgJsonPath = require.resolve("playwright-core/package.json");
+    const pkgRoot = path.dirname(pkgJsonPath);
+    for (const rel of candidatePaths) {
+      const abs = path.join(pkgRoot, rel);
+      try {
+        const source = fs.readFileSync(abs, "utf8");
+        if (source && source.length > 0) {
+          cached = { source, available: true };
+          return cached;
+        }
+      } catch (err) {
+        // Try the next candidate; last error is reported if all fail.
+        cached = { source: null, available: false, reason: err.message };
       }
-    } catch (err) {
-      // Try the next candidate; last error is reported if all fail.
-      cached = { source: null, available: false, reason: err.message };
     }
+  } catch (err) {
+    cached = { source: null, available: false, reason: err.message };
   }
 
   if (!loggedOnce) {
