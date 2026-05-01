@@ -37,7 +37,17 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { formatLogLine } from "../utils/logFormatter.js";
 
-/** @type {{ source: string|null, available: boolean, reason?: string }} */
+/**
+ * @typedef {Object} LoadedInjectedScriptSource
+ * @property {string|null} source - Pre-bundled Playwright injected-script
+ *   source as a string, or `null` when the bundle could not be resolved.
+ * @property {boolean} available - `true` iff `source` is non-empty and
+ *   safe to inject. Callers must check this before using `source`.
+ * @property {string} [reason] - Diagnostic message describing why the
+ *   bundle could not be loaded; only present when `available === false`.
+ */
+
+/** @type {LoadedInjectedScriptSource | null} */
 let cached = null;
 let loggedOnce = false;
 
@@ -52,7 +62,7 @@ let loggedOnce = false;
  * `{ available: false }` on any failure; callers must check `available`
  * before using `source`.
  *
- * @returns {{ source: string|null, available: boolean, reason?: string }}
+ * @returns {LoadedInjectedScriptSource}
  */
 export function loadPlaywrightInjectedScriptSource() {
   if (cached) return cached;
