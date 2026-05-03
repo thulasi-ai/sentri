@@ -23,22 +23,30 @@ function get(path) {
   });
 }
 
+// projectRepo.create / testRepo.create do NOT auto-generate id/createdAt and
+// do NOT return the created row — callers must supply both. See
+// backend/tests/recycle-bin.test.js for the canonical pattern.
+const now = () => new Date().toISOString();
+
 // ─── Empty-data case ──────────────────────────────────────────────────────────
-const projectA = projectRepo.create({ name: "Healing-Empty", url: "https://a.test" });
-let res = await get(`/api/v1/healing/summary?projectId=${projectA.id}`);
+const projectAId = "PRJ-HEAL-EMPTY";
+projectRepo.create({ id: projectAId, name: "Healing-Empty", url: "https://a.test", createdAt: now(), status: "idle", workspaceId: "WS-T" });
+let res = await get(`/api/v1/healing/summary?projectId=${projectAId}`);
 assert.equal(res.status, 200);
 assert.deepEqual(res.body.perStrategy, []);
 assert.deepEqual(res.body.topSelectors, []);
 assert.equal(res.body.totalEntries, 0);
 
 // ─── Populated histogram case ─────────────────────────────────────────────────
-const projectB = projectRepo.create({ name: "Healing-Populated", url: "https://b.test" });
-const t1 = testRepo.create({ id: "TC-H1", projectId: projectB.id, name: "x", steps: [], playwrightCode: "" });
-healingRepo.set(`${t1.id}::click::Submit`, { strategyIndex: 1, succeededAt: new Date().toISOString(), failCount: 3 });
-healingRepo.set(`${t1.id}::fill::Email`, { strategyIndex: 0, succeededAt: new Date().toISOString(), failCount: 1 });
-healingRepo.set(`${t1.id}::click::Cancel`, { strategyIndex: 1, failCount: 5 }); // never succeeded
+const projectBId = "PRJ-HEAL-POP";
+projectRepo.create({ id: projectBId, name: "Healing-Populated", url: "https://b.test", createdAt: now(), status: "idle", workspaceId: "WS-T" });
+const t1Id = "TC-H1";
+testRepo.create({ id: t1Id, projectId: projectBId, name: "x", description: "", steps: [], tags: [], createdAt: now(), updatedAt: now(), reviewStatus: "draft", priority: "medium", codeVersion: 0, isJourneyTest: false, assertionEnhanced: false });
+healingRepo.set(`${t1Id}::click::Submit`, { strategyIndex: 1, succeededAt: now(), failCount: 3 });
+healingRepo.set(`${t1Id}::fill::Email`, { strategyIndex: 0, succeededAt: now(), failCount: 1 });
+healingRepo.set(`${t1Id}::click::Cancel`, { strategyIndex: 1, failCount: 5 }); // never succeeded
 
-res = await get(`/api/v1/healing/summary?projectId=${projectB.id}`);
+res = await get(`/api/v1/healing/summary?projectId=${projectBId}`);
 assert.equal(res.status, 200);
 assert.equal(res.body.totalEntries, 3);
 assert.ok(res.body.perStrategy.find((s) => s.strategyIndex === 1 && s.total === 2 && s.success === 1));
