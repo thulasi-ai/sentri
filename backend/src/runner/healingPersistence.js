@@ -17,6 +17,7 @@ import { recordHealing, recordHealingFailure } from "../selfHealing.js";
 import { trackTelemetry } from "../utils/telemetry.js";
 import { recordMetric } from "../utils/recordMetric.js";
 import * as testRepo from "../database/repositories/testRepo.js";
+import { formatLogLine } from "../utils/logFormatter.js";
 
 /**
  * persistHealingEvents(testId, events)
@@ -87,7 +88,11 @@ export function persistHealingEvents(testId, events) {
     if (test?.projectId) {
       recordMetric(test.projectId, "healing.savings.estimate", succeededCount, { failedCount });
     }
-  } catch {
-    // Never let metrics persistence fail healing event persistence.
+  } catch (err) {
+    // Never let metrics persistence fail healing event persistence — but
+    // surface the failure so silent metric loss is observable in logs.
+    try {
+      console.warn(formatLogLine("warn", null, `[healing] recordMetric failed for testId=${testId}: ${err?.message || err}`));
+    } catch { /* logger itself failed — give up silently */ }
   }
 }

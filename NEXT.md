@@ -43,7 +43,7 @@ Docs-only convention change: every new backend route must have its frontend cons
 - [ ] AUTO-017.3: `backend/tests/web-vitals-trend.test.js` covers ingestion + retrieval
 - [ ] PROC-001: CI check fails when a PR touches `backend/src/routes/*.js` without `frontend/src/api.js` or any `frontend/src/pages/*.jsx`
 - [ ] PROC-001: REVIEW.md, AGENT.md, PR template, CONTRIBUTING.md updated
-- [ ] This PR's own NEXT.md / ROADMAP.md / changelog hand-off is performed by `scripts/promote-sprint-item.mjs` (shipped in PR #14)
+- [ ] This PR's own NEXT.md / ROADMAP.md / changelog hand-off is performed by `node scripts/promote-sprint-item.mjs --pr <N> --new-item <ID>` (shipped in PR #14). Note: PR #14's own hand-off was done by hand because the script landed in the same PR — verify the script works end-to-end on this PR's hand-off.
 - [ ] Add entry to `docs/changelog.md` under `## [Unreleased]`
 - [ ] `backend/src/middleware/permissions.json` updated for any new role-gated routes (per REVIEW.md)
 
