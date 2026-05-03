@@ -13,6 +13,12 @@ router.get("/healing/summary", (req, res) => {
   if (!projectId) return res.status(400).json({ error: "projectId is required" });
   const p = projectRepo.getById(projectId);
   if (!p) return res.status(404).json({ error: "Project not found" });
+  // ACL-001: enforce workspace ownership. Without this check, any
+  // authenticated viewer in workspace A could read healing analytics for a
+  // project belonging to workspace B by guessing/knowing its projectId.
+  if (req.workspaceId && p.workspaceId && p.workspaceId !== req.workspaceId) {
+    return res.status(404).json({ error: "Project not found" });
+  }
 
   const tests = testRepo.getByProjectId(projectId);
   const testIds = tests.map((t) => t.id);
