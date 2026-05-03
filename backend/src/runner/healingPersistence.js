@@ -77,10 +77,13 @@ export function persistHealingEvents(testId, events) {
   });
 
   // Derive projectId from the test record so the metric is attributable per
-  // project (testId is a standalone identifier like "TC-42" — it does not
-  // embed projectId). Best-effort: skip the sample if the test was deleted.
+  // project. Note: callers pass a healingScopeId of the form
+  // "<testId>@v<codeVersion>" (see executeTest.js), so strip the version
+  // suffix before looking up the test. Best-effort: skip if the test was
+  // deleted or the lookup fails — never let metrics break healing persistence.
   try {
-    const test = testRepo.getById(testId);
+    const baseTestId = String(testId).split("@")[0];
+    const test = testRepo.getById(baseTestId);
     if (test?.projectId) {
       recordMetric(test.projectId, "healing.savings.estimate", succeededCount, { failedCount });
     }
