@@ -24,6 +24,7 @@ const NAV_GROUPS = [
     items: [
       { to: "/runs",    icon: PlayCircle, label: "Runs" },
       { to: "/reports", icon: BarChart3, label: "Reports" },
+      { to: "/healing", icon: BarChart3, label: "Healing" },
     ],
   },
   {

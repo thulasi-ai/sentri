@@ -54,6 +54,7 @@ import chatRouter from "./routes/chat.js";
 import testFixRouter from "./routes/testFix.js";
 import recycleBinRouter from "./routes/recycleBin.js";
 import workspacesRouter from "./routes/workspaces.js";
+import healingRouter from "./routes/healing.js";
 import { spec as openapiSpec } from "./openapi.js";
 
 // Re-export SSE symbols so existing imports from "./index.js" keep working

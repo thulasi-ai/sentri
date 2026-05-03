@@ -15,6 +15,7 @@
 
 import { recordHealing, recordHealingFailure } from "../selfHealing.js";
 import { trackTelemetry } from "../utils/telemetry.js";
+import { recordMetric } from "../utils/recordMetric.js";
 
 /**
  * persistHealingEvents(testId, events)
@@ -73,4 +74,6 @@ export function persistHealingEvents(testId, events) {
     // breakdown chart in the UI ("how often does strategy 2 win?").
     strategyHistogram,
   });
+
+  recordMetric(testId.split("@")[0], "healing.savings.estimate", succeededCount, { failedCount });
 }

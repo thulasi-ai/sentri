@@ -50,6 +50,7 @@
     "POST /api/v1/test-connection": { "role": "qa_lead", "source": "backend/src/routes/system.js:48" },
     "DELETE /api/v1/data/runs": { "role": "admin", "source": "backend/src/routes/system.js:193" },
     "DELETE /api/v1/data/activities": { "role": "admin", "source": "backend/src/routes/system.js:200" },
+    "GET /api/v1/healing/summary": { "role": "viewer", "source": "backend/src/routes/healing.js:11" },
     "DELETE /api/v1/data/healing": { "role": "admin", "source": "backend/src/routes/system.js:205" }
   },
   "anyAuthenticatedMember": [

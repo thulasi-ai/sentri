@@ -669,6 +669,7 @@ export const api = {
   clearActivities: () => req("DELETE", "/data/activities"),
   /** @returns {Promise<{cleared: number}>} Clear self-healing history. */
   clearHealing:    () => req("DELETE", "/data/healing"),
+  getHealingSummary: (projectId) => req("GET", `/healing/summary?projectId=${encodeURIComponent(projectId)}`),
 
   // ── Recycle bin ──────────────────────────────────────────────────────────────
 
