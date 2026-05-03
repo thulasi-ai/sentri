@@ -51,8 +51,12 @@ function writeFile(p, s, dryRun) {
  * Pure function — easy to unit-test.
  */
 export function promoteNextMd(src, { pr, newItem }) {
-  const currentRe = /## ▶ Current PR — ([^\n]+)\n([\s\S]*?)(?=\n## ⏭ Queue)/;
-  const queueRe = /## ⏭ Queue \(next 3 PRs after current\)\n([\s\S]*?)(?=\n## ✅ Recently completed)/;
+  // Anchors use lookaheads on `\n---\n` / `\n## ` so the inter-section
+  // horizontal-rule separators in NEXT.md are preserved across rewrites.
+  // Earlier versions used `(?=\n## ⏭ Queue)` which silently swallowed the
+  // preceding `---\n` line on every promotion.
+  const currentRe = /## ▶ Current PR — ([^\n]+)\n([\s\S]*?)(?=\n(?:---\n\n)?## ⏭ Queue)/;
+  const queueRe = /## ⏭ Queue \(next 3 PRs after current\)\n([\s\S]*?)(?=\n(?:---\n\n)?## ✅ Recently completed)/;
   const completedRe = /## ✅ Recently completed\n\n(\| ID \| Title \| PR \|\n\|[^\n]+\|\n)([\s\S]*?)(?=\n\*Full completed list)/;
 
   const cur = src.match(currentRe);
