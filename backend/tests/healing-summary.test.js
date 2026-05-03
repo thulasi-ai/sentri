@@ -30,7 +30,9 @@ const now = () => new Date().toISOString();
 
 // ─── Empty-data case ──────────────────────────────────────────────────────────
 const projectAId = "PRJ-HEAL-EMPTY";
-projectRepo.create({ id: projectAId, name: "Healing-Empty", url: "https://a.test", createdAt: now(), status: "idle", workspaceId: "WS-T" });
+// Note: workspaceId is intentionally omitted — it's a nullable FK to workspaces(id)
+// and this test stubs req.userRole directly, bypassing workspaceScope.
+projectRepo.create({ id: projectAId, name: "Healing-Empty", url: "https://a.test", createdAt: now(), status: "idle" });
 let res = await get(`/api/v1/healing/summary?projectId=${projectAId}`);
 assert.equal(res.status, 200);
 assert.deepEqual(res.body.perStrategy, []);
@@ -39,7 +41,7 @@ assert.equal(res.body.totalEntries, 0);
 
 // ─── Populated histogram case ─────────────────────────────────────────────────
 const projectBId = "PRJ-HEAL-POP";
-projectRepo.create({ id: projectBId, name: "Healing-Populated", url: "https://b.test", createdAt: now(), status: "idle", workspaceId: "WS-T" });
+projectRepo.create({ id: projectBId, name: "Healing-Populated", url: "https://b.test", createdAt: now(), status: "idle" });
 const t1Id = "TC-H1";
 testRepo.create({ id: t1Id, projectId: projectBId, name: "x", description: "", steps: [], tags: [], createdAt: now(), updatedAt: now(), reviewStatus: "draft", priority: "medium", codeVersion: 0, isJourneyTest: false, assertionEnhanced: false });
 healingRepo.set(`${t1Id}::click::Submit`, { strategyIndex: 1, succeededAt: now(), failCount: 3 });
