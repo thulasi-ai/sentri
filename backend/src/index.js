@@ -257,6 +257,7 @@ app.use(API_PREFIX, requireAuth, workspaceScope, systemRouter);
 app.use(API_PREFIX, requireAuth, workspaceScope, chatRouter);
 app.use(API_PREFIX, requireAuth, workspaceScope, testFixRouter);
 app.use(API_PREFIX, requireAuth, workspaceScope, recycleBinRouter);
+app.use(API_PREFIX, requireAuth, workspaceScope, healingRouter);
 app.use(`${API_PREFIX}/workspaces`, requireAuth, workspaceScope, workspacesRouter);
 
 // ─── INF-005: Legacy /api/* → /api/v1/* 308 redirects ────────────────────────

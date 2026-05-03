@@ -16,6 +16,7 @@
 import { recordHealing, recordHealingFailure } from "../selfHealing.js";
 import { trackTelemetry } from "../utils/telemetry.js";
 import { recordMetric } from "../utils/recordMetric.js";
+import * as testRepo from "../database/repositories/testRepo.js";
 
 /**
  * persistHealingEvents(testId, events)
@@ -75,5 +76,15 @@ export function persistHealingEvents(testId, events) {
     strategyHistogram,
   });
 
-  recordMetric(testId.split("@")[0], "healing.savings.estimate", succeededCount, { failedCount });
+  // Derive projectId from the test record so the metric is attributable per
+  // project (testId is a standalone identifier like "TC-42" — it does not
+  // embed projectId). Best-effort: skip the sample if the test was deleted.
+  try {
+    const test = testRepo.getById(testId);
+    if (test?.projectId) {
+      recordMetric(test.projectId, "healing.savings.estimate", succeededCount, { failedCount });
+    }
+  } catch {
+    // Never let metrics persistence fail healing event persistence.
+  }
 }

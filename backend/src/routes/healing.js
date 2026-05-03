@@ -14,7 +14,7 @@ router.get("/healing/summary", (req, res) => {
   const p = projectRepo.getById(projectId);
   if (!p) return res.status(404).json({ error: "Project not found" });
 
-  const tests = testRepo.listByProject(projectId);
+  const tests = testRepo.getByProjectId(projectId);
   const testIds = tests.map((t) => t.id);
   const entries = testIds.flatMap((tid) => Object.values(healingRepo.getByTestId(tid)));
   const strategy = {};
