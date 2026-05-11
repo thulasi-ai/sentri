@@ -202,31 +202,43 @@ export function getByProjectId(projectId) {
 
 
 /**
- * Find a non-deleted run that already owns a GitHub Check Run for repo + SHA.
- * Used to make duplicate PR webhooks idempotent instead of creating a second
- * pending check for the same commit (INT-002).
+ * Find a non-deleted run that was launched from a specific GitHub webhook
+ * delivery. Used to make duplicate PR webhooks idempotent (INT-002).
  *
- * Uses SQLite's `json_extract` to filter directly on the `githubCheck` JSON
- * column rather than scanning a recency-bounded window — long-lived PRs with
- * >50 unrelated runs in between must still re-use the existing checkRunId,
- * otherwise GitHub ends up with orphaned `in_progress` checks on the PR
- * (an industry-standard QA gate cannot leak state on retried webhook
- * deliveries — GitHub retries with exponential backoff for up to 24h).
+ * GitHub stamps every webhook delivery with a unique UUID in the
+ * `X-GitHub-Delivery` header and retries the same UUID with exponential
+ * backoff for up to 24h on non-2xx responses. The delivery ID — not the
+ * commit SHA — is the correct idempotency key:
+ *
+ *   - Two deliveries for the same SHA but different delivery IDs are
+ *     **distinct events** (e.g. PR opened, then `check_suite.rerequested`
+ *     after a user clicks "Re-run"). Each deserves a fresh Check Run.
+ *   - Two deliveries for the *same* delivery ID are GitHub retrying the
+ *     same event. We must produce the same `checkRunId` and not launch
+ *     a duplicate run.
+ *
+ * The previous repo+SHA-based lookup conflated these two cases — a
+ * legitimate `rerequested` event for the same commit would silently
+ * reuse the prior check and overwrite its conclusion, which is
+ * surprising behaviour for an industry-standard QA platform.
+ *
+ * Uses SQLite's `json_extract` to filter directly on the `githubCheck`
+ * JSON column so long-lived PRs with many unrelated intervening runs
+ * still match correctly.
  *
  * @param {string} projectId
- * @param {string} repo
- * @param {string} sha
+ * @param {string} deliveryId — value of the `X-GitHub-Delivery` header.
  * @returns {Object|undefined}
  */
-export function findByGithubRepoSha(projectId, repo, sha) {
+export function findByGithubDeliveryId(projectId, deliveryId) {
+  if (!deliveryId) return undefined;
   const db = getDatabase();
   const row = db.prepare(
     `SELECT * FROM runs
      WHERE projectId = ? AND deletedAt IS NULL
-       AND json_extract(githubCheck, '$.repo') = ?
-       AND json_extract(githubCheck, '$.sha')  = ?
+       AND json_extract(githubCheck, '$.deliveryId') = ?
      ORDER BY startedAt DESC LIMIT 1`
-  ).get(projectId, repo, sha);
+  ).get(projectId, deliveryId);
   return row ? rowToRun(row) : undefined;
 }
 

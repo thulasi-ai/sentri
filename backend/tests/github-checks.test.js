@@ -139,13 +139,15 @@ test('transient 5xx is retried and the call succeeds when GitHub recovers', asyn
   assert.equal(createCalls, 1);
 });
 
-test('findByGithubRepoSha returns the existing run so webhook retries are idempotent', () => {
+test('findByGithubDeliveryId returns the existing run so retried deliveries are idempotent', () => {
   resetDb();
-  // INT-002 anti-pattern guard: duplicate webhook deliveries for the same
-  // { repo, sha } must reuse the existing checkRunId — otherwise GitHub
-  // accumulates orphan `in_progress` checks on the PR. The lookup uses
-  // SQLite json_extract so it stays correct beyond the 50-run window the
-  // earlier in-process scan was capped at.
+  // INT-002 idempotency contract: GitHub retries non-2xx deliveries with the
+  // same X-GitHub-Delivery UUID for up to 24h. The delivery ID — not the
+  // commit SHA — is the correct idempotency key. Two deliveries for the
+  // same SHA but different UUIDs (e.g. `pull_request.synchronize` followed
+  // by `check_suite.rerequested` after a "Re-run" click) are distinct
+  // events and must each produce a fresh Check Run; only retries of the
+  // SAME delivery must reuse the existing checkRunId.
   const projectId = 'PRJ-IDEM';
   runRepo.create({
     id: 'RUN-IDEM-OLD',
@@ -153,7 +155,7 @@ test('findByGithubRepoSha returns the existing run so webhook retries are idempo
     type: 'test_run',
     status: 'completed',
     startedAt: new Date(Date.now() - 60_000).toISOString(),
-    githubCheck: { checkRunId: 111, repo: 'acme/app', sha: 'other-sha', installationId: '99' },
+    githubCheck: { checkRunId: 111, deliveryId: 'delivery-old', repo: 'acme/app', sha: 'abc', installationId: '99' },
     results: [],
   });
   runRepo.create({
@@ -162,17 +164,20 @@ test('findByGithubRepoSha returns the existing run so webhook retries are idempo
     type: 'test_run',
     status: 'running',
     startedAt: new Date().toISOString(),
-    githubCheck: { checkRunId: 222, repo: 'acme/app', sha: 'abc', installationId: '99' },
+    githubCheck: { checkRunId: 222, deliveryId: 'delivery-current', repo: 'acme/app', sha: 'abc', installationId: '99' },
     results: [],
   });
-  const match = runRepo.findByGithubRepoSha(projectId, 'acme/app', 'abc');
-  assert.ok(match, 'expected to find a matching run');
+  const match = runRepo.findByGithubDeliveryId(projectId, 'delivery-current');
+  assert.ok(match, 'expected to find the run for the current delivery');
   assert.equal(match.id, 'RUN-IDEM-MATCH');
   assert.equal(match.githubCheck.checkRunId, 222);
-  // Misses must return undefined (different sha, different repo, different project).
-  assert.equal(runRepo.findByGithubRepoSha(projectId, 'acme/app', 'unknown'), undefined);
-  assert.equal(runRepo.findByGithubRepoSha(projectId, 'other/app', 'abc'), undefined);
-  assert.equal(runRepo.findByGithubRepoSha('PRJ-OTHER', 'acme/app', 'abc'), undefined);
+  // A different delivery for the same SHA must NOT match — distinct events
+  // deserve fresh Check Runs.
+  assert.equal(runRepo.findByGithubDeliveryId(projectId, 'delivery-new'), undefined);
+  // Misses across projects / missing delivery IDs.
+  assert.equal(runRepo.findByGithubDeliveryId('PRJ-OTHER', 'delivery-current'), undefined);
+  assert.equal(runRepo.findByGithubDeliveryId(projectId, null), undefined);
+  assert.equal(runRepo.findByGithubDeliveryId(projectId, ''), undefined);
 });
 
 test('Retry-After header is honoured when GitHub returns 429', async () => {

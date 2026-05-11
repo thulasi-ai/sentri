@@ -182,7 +182,26 @@ function normalizeGithubPayload(body = {}) {
   return { repo, sha, baseSha, prNumber };
 }
 
-async function prepareGithubCheck(project, body, runId) {
+/**
+ * Prepare a GitHub Check Run for a Sentri run, returning the metadata to
+ * persist on `run.githubCheck` (or `null` when no check should be created).
+ *
+ * **Idempotency contract (INT-002):**
+ * GitHub retries failed webhook deliveries (any non-2xx) with exponential
+ * backoff for up to 24h, always using the same `X-GitHub-Delivery` UUID.
+ * The delivery ID — not the commit SHA — is the correct idempotency key:
+ *   - Same delivery ID → GitHub is retrying. Return existing check, do not
+ *     create a new run, do not transition state on GitHub.
+ *   - New delivery ID for the same SHA → distinct event (e.g. `rerequested`
+ *     after a user clicks "Re-run"). Create a fresh Check Run.
+ *
+ * @param {Object} project
+ * @param {Object} body          — trigger request body (already merged with normalizeGithubPayload).
+ * @param {string} runId
+ * @param {string|null} deliveryId — value of the `X-GitHub-Delivery` header, when present.
+ * @returns {Promise<Object|null>}
+ */
+async function prepareGithubCheck(project, body, runId, deliveryId = null) {
   const payload = normalizeGithubPayload(body);
   if (!payload.repo || !payload.sha) return null;
   const settings = githubCheckSettingsRepo.getByProjectId(project.id);
@@ -190,26 +209,14 @@ async function prepareGithubCheck(project, body, runId) {
   if (settings.repo && settings.repo !== payload.repo) return null;
   if (!settings.installationId) throw new Error("GitHub installationId is not configured for this project");
 
-  const existing = runRepo.findByGithubRepoSha(project.id, payload.repo, payload.sha);
-  if (existing?.githubCheck?.checkRunId) {
-    // INT-002: A previous run for the same { repo, sha } already owns a
-    // GitHub Check Run. We re-use its checkRunId for idempotency, but the
-    // previous run may have already concluded — in that case the check is
-    // in a terminal state on GitHub. Re-mark it as in_progress so the PR
-    // accurately reflects that a fresh Sentri run is now executing against
-    // this commit. Errors bubble up to the caller's best-effort guard.
-    await markInProgress(existing.githubCheck.checkRunId, {
-      repo: existing.githubCheck.repo,
-      installationId: existing.githubCheck.installationId || settings.installationId,
-    });
-    return {
-      ...existing.githubCheck,
-      installationId: existing.githubCheck.installationId || settings.installationId,
-      status: "in_progress",
-      conclusion: undefined,
-      completedAt: undefined,
-      reused: true,
-    };
+  // Retry-delivery idempotency: same X-GitHub-Delivery ⇒ same check, no
+  // state transition. The caller (handleTrigger) short-circuits when it
+  // detects `reused: true` so the underlying Sentri run is also skipped.
+  if (deliveryId) {
+    const existing = runRepo.findByGithubDeliveryId(project.id, deliveryId);
+    if (existing?.githubCheck?.checkRunId) {
+      return { ...existing.githubCheck, reused: true, reusedRunId: existing.id };
+    }
   }
 
   const checkRun = await createPending(runId, {
@@ -220,6 +227,7 @@ async function prepareGithubCheck(project, body, runId) {
   await markInProgress(checkRun.id, { repo: payload.repo, installationId: settings.installationId });
   return {
     checkRunId: checkRun.id,
+    deliveryId: deliveryId || null,
     repo: payload.repo,
     sha: payload.sha,
     baseSha: payload.baseSha,
@@ -354,21 +362,31 @@ async function handleTrigger(req, res) {
     actionTimeout: validatedDials?.exploreActionTimeout ?? 5000,
   };
 
+  // ── 3b. GitHub delivery-retry idempotency (INT-002) ───────────────────
+  // GitHub retries non-2xx webhook deliveries with the same X-GitHub-Delivery
+  // UUID for up to 24h. If we've already started a run for this exact
+  // delivery, ack with the existing runId + checkRunId and DO NOT create a
+  // second Sentri run. This is the only correct "duplicate" — same SHA from
+  // a distinct delivery (e.g. `check_suite.rerequested`) is a fresh event.
+  const githubDeliveryId = req.githubDeliveryId || null;
+  if (githubDeliveryId) {
+    const dup = runRepo.findByGithubDeliveryId(project.id, githubDeliveryId);
+    if (dup?.githubCheck?.checkRunId) {
+      const proto = req.headers["x-forwarded-proto"] || req.protocol;
+      const host  = req.headers["x-forwarded-host"]  || req.get("host");
+      return res.status(202).json({
+        runId: dup.id,
+        statusUrl: `${proto}://${host}/api/v1/projects/${project.id}/trigger/runs/${dup.id}`,
+        githubCheck: { checkRunId: dup.githubCheck.checkRunId, reused: true },
+      });
+    }
+  }
+
   // ── 4. Guard: no concurrent run ───────────────────────────────────────
   // From here to runRepo.create() the code is fully synchronous, so no
   // other request can interleave and pass the same guard.
   const existingRun = runRepo.findActiveByProjectId(project.id);
   if (existingRun) {
-    const githubPayload = normalizeGithubPayload(req.body || {});
-    if (githubPayload.repo && githubPayload.sha && existingRun.githubCheck?.repo === githubPayload.repo && existingRun.githubCheck?.sha === githubPayload.sha) {
-      const proto = req.headers["x-forwarded-proto"] || req.protocol;
-      const host  = req.headers["x-forwarded-host"]  || req.get("host");
-      return res.status(202).json({
-        runId: existingRun.id,
-        statusUrl: `${proto}://${host}/api/v1/projects/${project.id}/trigger/runs/${existingRun.id}`,
-        githubCheck: { checkRunId: existingRun.githubCheck.checkRunId, reused: true },
-      });
-    }
     return res.status(409).json({
       error: `A run is already in progress (${existingRun.id}).`,
       runId: existingRun.id,
@@ -412,7 +430,7 @@ async function handleTrigger(req, res) {
     // surface. Failures here are logged and swallowed, mirroring the
     // `concludeGithubCheck` contract on the completion side.
     try {
-      run.githubCheck = await prepareGithubCheck(project, req.body || {}, runId);
+      run.githubCheck = await prepareGithubCheck(project, req.body || {}, runId, githubDeliveryId);
       if (run.githubCheck) runRepo.update(runId, { githubCheck: run.githubCheck });
     } catch (err) {
       console.error(formatLogLine("warn", runId, `[github-checks] Failed to create pending check: ${err.message}`));
@@ -717,6 +735,10 @@ router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, 
     return res.status(200).json({ ok: true, ignored: true, reason: "event not triggering", event, action });
   }
 
+  // Capture the GitHub delivery UUID so handleTrigger can dedupe retries.
+  // GitHub guarantees this header on every webhook delivery and reuses the
+  // same UUID across all retry attempts of a given delivery.
+  req.githubDeliveryId = req.get("X-GitHub-Delivery") || null;
   req.body = { ...(req.body || {}), ...normalizeGithubPayload(req.body || {}) };
   return handleTrigger(req, res);
 });
