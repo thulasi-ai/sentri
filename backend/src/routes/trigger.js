@@ -192,7 +192,24 @@ async function prepareGithubCheck(project, body, runId) {
 
   const existing = runRepo.findByGithubRepoSha(project.id, payload.repo, payload.sha);
   if (existing?.githubCheck?.checkRunId) {
-    return { ...existing.githubCheck, reused: true };
+    // INT-002: A previous run for the same { repo, sha } already owns a
+    // GitHub Check Run. We re-use its checkRunId for idempotency, but the
+    // previous run may have already concluded — in that case the check is
+    // in a terminal state on GitHub. Re-mark it as in_progress so the PR
+    // accurately reflects that a fresh Sentri run is now executing against
+    // this commit. Errors bubble up to the caller's best-effort guard.
+    await markInProgress(existing.githubCheck.checkRunId, {
+      repo: existing.githubCheck.repo,
+      installationId: existing.githubCheck.installationId || settings.installationId,
+    });
+    return {
+      ...existing.githubCheck,
+      installationId: existing.githubCheck.installationId || settings.installationId,
+      status: "in_progress",
+      conclusion: undefined,
+      completedAt: undefined,
+      reused: true,
+    };
   }
 
   const checkRun = await createPending(runId, {
@@ -673,9 +690,33 @@ async function launchPreviewCrawl({ project, previewUrl, provider, tokenRow, dia
  *      would let any signed payload trigger any project ID in the URL).
  */
 
+// INT-002: GitHub fires webhooks for many event types — `ping` when the
+// hook is first installed, plus `push`, `issues`, `issue_comment`,
+// `workflow_run`, `star`, etc. depending on subscriptions. Without an
+// event-type filter, ANY delivery (including the install-time ping)
+// would launch a Sentri run. Mirror the Vercel/Netlify gate: only
+// PR-lifecycle events relevant to QA proceed; everything else is acked
+// 200 so GitHub stops retrying.
+const TRIGGERING_GITHUB_EVENTS = new Map([
+  ["pull_request", new Set(["opened", "synchronize", "reopened", "ready_for_review"])],
+  ["check_suite", new Set(["requested", "rerequested"])],
+]);
+
 router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, async (req, res) => {
   const sig = req.get("X-Hub-Signature-256");
   if (!verifyWebhookSignature("github", req.rawBody, sig)) return res.status(401).json({ error: "invalid signature" });
+
+  const event = req.get("X-GitHub-Event") || "";
+  const action = typeof req.body?.action === "string" ? req.body.action : "";
+  const allowedActions = TRIGGERING_GITHUB_EVENTS.get(event);
+  // `check_suite.requested` carries no `action`-bearing PR context on some
+  // forks, but the canonical webhook always supplies one. Reject events
+  // without a matching action — including `ping`, which has no action and
+  // no `pull_request` / `check_suite` payload.
+  if (!allowedActions || !allowedActions.has(action)) {
+    return res.status(200).json({ ok: true, ignored: true, reason: "event not triggering", event, action });
+  }
+
   req.body = { ...(req.body || {}), ...normalizeGithubPayload(req.body || {}) };
   return handleTrigger(req, res);
 });
