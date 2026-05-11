@@ -30,25 +30,53 @@ function createAppJwt(now = Math.floor(Date.now() / 1000)) {
   return `${signingInput}.${signature}`;
 }
 
+// Retry policy for transient upstream errors. GitHub's API returns:
+//   - 502 / 503 / 504 on edge-network issues (rare, ~seconds)
+//   - 429 on secondary rate-limit (tens of seconds; honour Retry-After)
+//   - 403 with `x-ratelimit-remaining: 0` on primary rate-limit
+// A non-retried single 5xx would lose the check-run entirely on a busy CI
+// fleet — industry-standard QA gates retry the GitHub API with bounded
+// exponential backoff. We cap at 3 attempts and 4s total so the trigger
+// path (which awaits this) doesn't block the run for long.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+const BASE_BACKOFF_MS = 250;
+
+function retryAfterMs(res) {
+  const header = res.headers?.get?.("retry-after");
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.min(seconds * 1000, 4000);
+  const dateMs = Date.parse(header);
+  if (Number.isFinite(dateMs)) return Math.max(0, Math.min(dateMs - Date.now(), 4000));
+  return null;
+}
+
 async function githubFetch(path, { method = "GET", token, body, fetchImpl = fetch } = {}) {
-  const res = await fetchImpl(`${API_BASE}${path}`, {
-    method,
-    headers: {
-      "Accept": "application/vnd.github+json",
-      "Content-Type": "application/json",
-      "User-Agent": "sentri-github-checks",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Authorization": `Bearer ${token}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetchImpl(`${API_BASE}${path}`, {
+      method,
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "User-Agent": "sentri-github-checks",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.ok) return res.json();
+
     const text = await res.text().catch(() => "");
-    const err = new Error(`GitHub API ${res.status}: ${text || res.statusText}`);
-    err.status = res.status;
-    throw err;
+    lastErr = new Error(`GitHub API ${res.status}: ${text || res.statusText}`);
+    lastErr.status = res.status;
+
+    if (!RETRYABLE_STATUS.has(res.status) || attempt === MAX_ATTEMPTS) throw lastErr;
+    const wait = retryAfterMs(res) ?? Math.min(BASE_BACKOFF_MS * 2 ** (attempt - 1), 2000);
+    await new Promise((r) => setTimeout(r, wait));
   }
-  return res.json();
+  throw lastErr;
 }
 
 /**

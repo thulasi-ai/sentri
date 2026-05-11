@@ -213,6 +213,24 @@ async function prepareGithubCheck(project, body, runId) {
   };
 }
 
+/**
+ * Conclude a GitHub Check Run once the Sentri run reaches a terminal state.
+ *
+ * **Placement rationale (deviates from NEXT.md INT-002 sketch):**
+ * NEXT.md suggests this hook lives in `testRunner.js` `onComplete`. We keep
+ * it here because (a) `testRunner.js` has no internal completion hook —
+ * `runWithAbort.onComplete` *is* the hook, fired from this file already;
+ * (b) only the trigger path carries GitHub repo/sha context, so wiring it
+ * through the runner would require threading `run.githubCheck` plumbing
+ * into a module that has no other reason to know about integrations;
+ * (c) keeping integration side-effects at the route layer matches the
+ * pattern used by `fireNotifications` (FEA-001) just above this call.
+ * Errors are always logged + swallowed so a GitHub outage never fails the
+ * underlying Sentri run (INT-002 anti-pattern guard).
+ *
+ * @param {Object} finishedRun
+ * @param {Object} project
+ */
 async function concludeGithubCheck(finishedRun, project) {
   const check = finishedRun?.githubCheck;
   if (!check?.checkRunId || !check.repo || !check.installationId) return;

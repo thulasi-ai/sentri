@@ -20,9 +20,17 @@ function makeFetch(calls) {
   return async (url, opts) => {
     calls.push({ url, opts, body: opts.body ? JSON.parse(opts.body) : null });
     if (String(url).includes('/access_tokens')) {
-      return { ok: true, json: async () => ({ token: 'inst-token', expires_at: new Date(Date.now() + 3600_000).toISOString() }) };
+      return {
+        ok: true,
+        headers: { get: () => null },
+        json: async () => ({ token: 'inst-token', expires_at: new Date(Date.now() + 3600_000).toISOString() }),
+      };
     }
-    return { ok: true, json: async () => ({ id: 123, status: opts.method === 'POST' ? 'queued' : 'completed' }) };
+    return {
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({ id: 123, status: opts.method === 'POST' ? 'queued' : 'completed' }),
+    };
   };
 }
 
@@ -87,14 +95,70 @@ test('summary renders Web Vitals violations separately and conclusion fails', ()
   assert.equal(conclusionForRun(run), 'failure');
 });
 
-test('GitHub 5xx surfaces to caller so integration hook can log and swallow', async () => {
+test('GitHub 5xx surfaces to caller after retries so integration hook can log and swallow', async () => {
   process.env.GITHUB_APP_ID = '1';
   process.env.GITHUB_APP_PRIVATE_KEY = PRIVATE_KEY;
   clearInstallationTokenCache();
+  let attempts = 0;
   await assert.rejects(
     () => createPending('RUN-2', { repo: 'acme/app', sha: 'abc', installationId: '99' }, {
-      fetchImpl: async () => ({ ok: false, status: 502, statusText: 'Bad Gateway', text: async () => 'bad' }),
+      fetchImpl: async () => {
+        attempts++;
+        return { ok: false, status: 502, statusText: 'Bad Gateway', headers: { get: () => null }, text: async () => 'bad' };
+      },
     }),
     /GitHub API 502/,
   );
+  // 3 retry attempts on the /access_tokens call; createPending never reaches
+  // the check-runs POST because the token exchange itself fails.
+  assert.equal(attempts, 3);
+});
+
+test('transient 5xx is retried and the call succeeds when GitHub recovers', async () => {
+  process.env.GITHUB_APP_ID = '1';
+  process.env.GITHUB_APP_PRIVATE_KEY = PRIVATE_KEY;
+  clearInstallationTokenCache();
+  let tokenCalls = 0;
+  let createCalls = 0;
+  const fetchImpl = async (url) => {
+    if (String(url).includes('/access_tokens')) {
+      tokenCalls++;
+      if (tokenCalls === 1) {
+        return { ok: false, status: 503, statusText: 'Service Unavailable', headers: { get: () => null }, text: async () => 'down' };
+      }
+      return { ok: true, headers: { get: () => null }, json: async () => ({ token: 't', expires_at: new Date(Date.now() + 3600_000).toISOString() }) };
+    }
+    createCalls++;
+    return { ok: true, headers: { get: () => null }, json: async () => ({ id: 42, status: 'queued' }) };
+  };
+  const result = await createPending('RUN-3', { repo: 'acme/app', sha: 'abc', installationId: '100' }, { fetchImpl });
+  assert.equal(result.id, 42);
+  assert.equal(tokenCalls, 2);
+  assert.equal(createCalls, 1);
+});
+
+test('Retry-After header is honoured when GitHub returns 429', async () => {
+  process.env.GITHUB_APP_ID = '1';
+  process.env.GITHUB_APP_PRIVATE_KEY = PRIVATE_KEY;
+  clearInstallationTokenCache();
+  let calls = 0;
+  const start = Date.now();
+  const fetchImpl = async (url) => {
+    if (String(url).includes('/access_tokens')) {
+      calls++;
+      if (calls === 1) {
+        return {
+          ok: false,
+          status: 429,
+          statusText: 'Too Many Requests',
+          headers: { get: (name) => name.toLowerCase() === 'retry-after' ? '1' : null },
+          text: async () => 'rate-limited',
+        };
+      }
+      return { ok: true, headers: { get: () => null }, json: async () => ({ token: 't', expires_at: new Date(Date.now() + 3600_000).toISOString() }) };
+    }
+    return { ok: true, headers: { get: () => null }, json: async () => ({ id: 7 }) };
+  };
+  await createPending('RUN-4', { repo: 'acme/app', sha: 'abc', installationId: '101' }, { fetchImpl });
+  assert.ok(Date.now() - start >= 900, 'expected to wait at least ~1s per Retry-After');
 });

@@ -204,7 +204,14 @@ export function getByProjectId(projectId) {
 /**
  * Find a non-deleted run that already owns a GitHub Check Run for repo + SHA.
  * Used to make duplicate PR webhooks idempotent instead of creating a second
- * pending check for the same commit.
+ * pending check for the same commit (INT-002).
+ *
+ * Uses SQLite's `json_extract` to filter directly on the `githubCheck` JSON
+ * column rather than scanning a recency-bounded window — long-lived PRs with
+ * >50 unrelated runs in between must still re-use the existing checkRunId,
+ * otherwise GitHub ends up with orphaned `in_progress` checks on the PR
+ * (an industry-standard QA gate cannot leak state on retried webhook
+ * deliveries — GitHub retries with exponential backoff for up to 24h).
  *
  * @param {string} projectId
  * @param {string} repo
@@ -213,12 +220,14 @@ export function getByProjectId(projectId) {
  */
 export function findByGithubRepoSha(projectId, repo, sha) {
   const db = getDatabase();
-  const rows = db.prepare(
+  const row = db.prepare(
     `SELECT * FROM runs
-     WHERE projectId = ? AND githubCheck IS NOT NULL AND deletedAt IS NULL
-     ORDER BY startedAt DESC LIMIT 50`
-  ).all(projectId).map(rowToRun);
-  return rows.find((run) => run.githubCheck?.repo === repo && run.githubCheck?.sha === sha);
+     WHERE projectId = ? AND deletedAt IS NULL
+       AND json_extract(githubCheck, '$.repo') = ?
+       AND json_extract(githubCheck, '$.sha')  = ?
+     ORDER BY startedAt DESC LIMIT 1`
+  ).get(projectId, repo, sha);
+  return row ? rowToRun(row) : undefined;
 }
 
 /**
