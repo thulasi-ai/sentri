@@ -58,10 +58,40 @@ export function getRegressedFailures(run, baseRun) {
   return { tests: failing.filter((result) => greenBase.has(testKey(result))), fallback: false };
 }
 
+// Format a violation object emitted by `evaluateQualityGates` /
+// `evaluateWebVitalsBudgets` in `backend/src/testRunner.js`. Both produce
+// `{ rule, threshold, actual, ... }` shapes — neither carries `message` or
+// `label`, so the previous `v.message || v.label || String(v)` fallback
+// rendered `[object Object]` for every real violation. Strings pass through
+// unchanged so any defensive callers (or legacy run rows) keep working.
+function formatGateViolation(v) {
+  if (typeof v === "string") return v;
+  if (!v || typeof v !== "object") return String(v);
+  if (v.message) return String(v.message);
+  if (v.label) return String(v.label);
+  if (v.rule != null) {
+    return `${v.rule}: actual ${v.actual} vs threshold ${v.threshold}`;
+  }
+  return String(v);
+}
+
+function formatVitalsViolation(v) {
+  if (typeof v === "string") return v;
+  if (!v || typeof v !== "object") return String(v);
+  if (v.message) return String(v.message);
+  if (v.label) return String(v.label);
+  if (v.rule != null) {
+    const scope = v.testName || v.testId;
+    const prefix = scope ? `${String(v.rule).toUpperCase()} on ${scope}` : String(v.rule).toUpperCase();
+    return `${prefix}: actual ${v.actual} vs threshold ${v.threshold}`;
+  }
+  return String(v);
+}
+
 function collectGateViolations(run) {
   const violations = [];
   if (Array.isArray(run?.gateResult?.violations)) {
-    violations.push(...run.gateResult.violations.map((v) => v.message || v.label || String(v)));
+    violations.push(...run.gateResult.violations.map(formatGateViolation));
   } else if (run?.gateResult && run.gateResult.passed === false) {
     violations.push("Quality gate failed.");
   }
@@ -71,7 +101,7 @@ function collectGateViolations(run) {
 function collectVitalsViolations(run) {
   const result = run?.webVitalsResult;
   if (!result) return [];
-  if (Array.isArray(result.violations)) return result.violations.map((v) => v.message || v.label || String(v));
+  if (Array.isArray(result.violations)) return result.violations.map(formatVitalsViolation);
   if (Array.isArray(result.metrics)) {
     return result.metrics.filter((m) => m.passed === false).map((m) => `${String(m.name || m.key).toUpperCase()} exceeded budget`);
   }

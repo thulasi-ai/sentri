@@ -85,17 +85,54 @@ test('findGreenBaseRun is bounded and matches repo plus base SHA', () => {
 });
 
 test('summary renders Web Vitals violations separately and conclusion fails', () => {
+  // Use the real { rule, threshold, actual, testId, testName } shape produced
+  // by evaluateWebVitalsBudgets in backend/src/testRunner.js. The previous
+  // plain-string fixture masked a `[object Object]` rendering bug because
+  // String('LCP exceeded budget') happens to return the string unchanged —
+  // but production violations are always objects.
   const run = {
-    passed: 2,
-    failed: 0,
+    passed: 1,
+    failed: 1,
     total: 2,
     results: [],
-    webVitalsResult: { passed: false, violations: ['LCP exceeded budget'] },
+    gateResult: {
+      passed: false,
+      violations: [
+        { rule: 'minPassRate', threshold: 80, actual: 50 },
+      ],
+    },
+    webVitalsResult: {
+      passed: false,
+      violations: [
+        { rule: 'lcp', threshold: 2500, actual: 4200, testId: 't1', testName: 'Checkout page' },
+      ],
+    },
   };
   const md = renderGithubCheckSummary(run, { baseRun: { results: [] }, runUrl: 'https://sentri/runs/RUN-1' });
+  assert.match(md, /Quality gate violations/);
+  assert.match(md, /minPassRate: actual 50 vs threshold 80/);
   assert.match(md, /Web Vitals budget violations/);
-  assert.match(md, /LCP exceeded budget/);
+  assert.match(md, /LCP on Checkout page: actual 4200 vs threshold 2500/);
+  assert.doesNotMatch(md, /\[object Object\]/, 'violations must not render as [object Object]');
   assert.equal(conclusionForRun(run), 'failure');
+});
+
+test('Web Vitals violation without testName falls back to testId in the formatted bullet', () => {
+  const run = {
+    passed: 0,
+    failed: 0,
+    total: 1,
+    results: [],
+    webVitalsResult: {
+      passed: false,
+      violations: [
+        { rule: 'cls', threshold: 0.1, actual: 0.42, testId: 't-no-name' },
+      ],
+    },
+  };
+  const md = renderGithubCheckSummary(run, { baseRun: { results: [] } });
+  assert.match(md, /CLS on t-no-name: actual 0\.42 vs threshold 0\.1/);
+  assert.doesNotMatch(md, /\[object Object\]/);
 });
 
 test('GitHub 5xx surfaces to caller after retries so integration hook can log and swallow', async () => {
