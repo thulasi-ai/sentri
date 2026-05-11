@@ -539,12 +539,16 @@ function fmtUptime(seconds) {
 }
 
 const SETTINGS_TABS = [
-  { key: "providers",   label: "AI Providers",  icon: <Zap size={14} />,      adminOnly: true },
-  { key: "integrations", label: "Integrations",   icon: <ExternalLink size={14} />, adminOnly: false },
-  { key: "members",     label: "Members",       icon: <Users size={14} />,    adminOnly: true },
-  { key: "execution",   label: "Execution",     icon: <Cpu size={14} />,      adminOnly: false },
-  { key: "data",        label: "Data",          icon: <Database size={14} />, adminOnly: true },
-  { key: "account",     label: "Account",       icon: <Shield size={14} />,   adminOnly: false },
+  { key: "providers",   label: "AI Providers",  icon: <Zap size={14} />,          adminOnly: true },
+  { key: "members",     label: "Members",       icon: <Users size={14} />,        adminOnly: true },
+  { key: "execution",   label: "Execution",     icon: <Cpu size={14} />,          adminOnly: false },
+  // Integrations is gated by qa_lead on the backend (GET /settings/github-checks).
+  // Keep it after `execution` so viewers (who lack qa_lead) don't land on a tab
+  // whose data fetch immediately 403s — `execution` stays the safe default for
+  // all non-admin roles. See review thread on this file (line 543).
+  { key: "integrations", label: "Integrations", icon: <ExternalLink size={14} />, adminOnly: false },
+  { key: "data",        label: "Data",          icon: <Database size={14} />,     adminOnly: true },
+  { key: "account",     label: "Account",       icon: <Shield size={14} />,       adminOnly: false },
 ];
 
 // Renders in place of an admin-only tab body when a non-admin lands on it

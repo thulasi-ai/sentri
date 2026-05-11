@@ -238,7 +238,7 @@ POST /api/v1/projects/:id/trigger/github
 
 Receives GitHub webhook deliveries (PR opened / synchronized / check_suite requested) and starts a Sentri run against the PR's head SHA. When per-project PR checks are enabled in **Settings → Integrations**, Sentri also creates a native GitHub Check Run (`queued` → `in_progress` → `success` / `failure` / `neutral`) with a Markdown summary that lists **regressed tests only** (failing now, green on the base SHA's last run), quality-gate violations, and Web Vitals budget violations.
 
-Duplicate deliveries for the same `{ repo, sha }` are idempotent — the existing `checkRunId` is reused (no duplicate pending checks on the PR).
+Retried webhook deliveries (same `X-GitHub-Delivery` UUID) are idempotent — the existing `checkRunId` is reused and no duplicate Sentri run is created. Distinct deliveries for the same `{ repo, sha }` (e.g. a `check_suite.rerequested` event after a user clicks "Re-run") each create a fresh Check Run.
 
 **Body** (forwarded by GitHub, or a flat shape from custom CI):
 ```json
