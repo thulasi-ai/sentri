@@ -391,7 +391,13 @@ export default function RunDetail() {
   // the first SSE snapshot — results.length grows as tests complete and would
   // show "0 test cases" until the first result arrives.
   const total = run.total ?? results.length;
-  const passRate = total > 0 ? Math.round((passed / total) * 100) : null;
+  // AUTO-001: budget-skipped tests never executed and shouldn't dilute the
+  // pass-rate denominator (they're surfaced separately via the
+  // `⏱ N skipped (over budget)` badge above). Mirrors the
+  // `evaluateQualityGates()` denominator semantics in
+  // `backend/src/testRunner.js` so the UI and the gate verdict agree.
+  const passRateDenominator = Math.max(0, total - skippedOverBudget);
+  const passRate = passRateDenominator > 0 ? Math.round((passed / passRateDenominator) * 100) : null;
 
   const traceUrl = run.tracePath ?? null;
   const traceViewerUrl = traceUrl ? `/trace-viewer/?trace=${encodeURIComponent(traceUrl)}` : null;
