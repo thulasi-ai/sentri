@@ -161,7 +161,11 @@ export const api = {
   /**
    * Execute all approved tests for a project.
    * @param {string} id   - Project ID.
-   * @param {Object} [body] - Optional `{ dialsConfig }` for parallel workers etc.
+   * @param {Object} [body] - Optional `{ dialsConfig, budgetMinutes }`.
+   *   `budgetMinutes` (AUTO-001) caps wall-clock dispatch time — risk-ordered
+   *   tests fill the budget first, low-risk tests are recorded as
+   *   `status: "skipped"` + `skipReason: "over_budget"` on the run. Server
+   *   caps the value at `MAX_BUDGET_MINUTES` (240).
    */
   runTests:      (id, body) => req("POST", `/projects/${id}/run`, body || undefined, TIMEOUT_LONG),
   /** @param {string} testId - Execute a single test. */

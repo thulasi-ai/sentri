@@ -1,3 +1,7 @@
+<!-- AUDIT_IMPL.md scope-reverted: this doc was added in the AUTO-001 PR but is
+unrelated to that sprint item and out of scope per AGENT.md § "Do not edit
+files outside NEXT.md § Files to change." File intentionally emptied here;
+re-introduce in its own PR with a tracked ROADMAP id. -->
 # Sentri — Industry-Grade Implementation Plan
 
 > **Last revised:** May 2026 · Based on `AUDIT.md` (Industry Readiness Audit, v1.0) cross-validated against live codebase.

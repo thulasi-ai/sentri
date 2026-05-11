@@ -383,6 +383,10 @@ export default function RunDetail() {
   const results = run.results || [];
   const passed = results.filter((r) => r.status === "passed").length;
   const failed = results.filter((r) => r.status === "failed").length;
+  // AUTO-001: tests dropped by the risk-based budget truncation surface as
+  // `status: "skipped"` + `skipReason: "over_budget"` so they're attributable
+  // (never silently dropped).
+  const skippedOverBudget = results.filter((r) => r.status === "skipped" && r.skipReason === "over_budget").length;
   // Use run.total (set upfront by the backend) so the count is correct from
   // the first SSE snapshot — results.length grows as tests complete and would
   // show "0 test cases" until the first result arrives.
@@ -565,6 +569,20 @@ export default function RunDetail() {
           {!isCrawl && total > 0 && (
             <span>
               {passed} passed · {failed} failed · {total} test cases
+            </span>
+          )}
+          {!isCrawl && skippedOverBudget > 0 && (
+            <span
+              className="badge badge-amber"
+              style={{ fontSize: "0.7rem" }}
+              title="Tests skipped to fit the requested budget — risk-based ordering kept the most likely-to-fail tests in scope."
+            >
+              ⏱ {skippedOverBudget} skipped (over budget)
+            </span>
+          )}
+          {!isCrawl && run.budgetMinutes != null && (
+            <span style={{ fontSize: "0.72rem", color: "var(--text3)" }}>
+              budget: {run.budgetMinutes}m
             </span>
           )}
         </div>

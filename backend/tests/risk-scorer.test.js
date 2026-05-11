@@ -20,14 +20,25 @@ test('smoke tests are pinned even with lower score', () => {
   assert.equal(ranked[0].id, 'a');
 });
 
-test('budget truncates queue but keeps smoke tests', () => {
+test('budget truncates queue, keeps smoke tests, surfaces skipped', () => {
   const tests = [
     { id: 's', name: 'smoke sanity', estimatedDurationMs: 8 * 60_000 },
     { id: 'x', name: 'heavy', estimatedDurationMs: 8 * 60_000 },
     { id: 'y', name: 'heavy2', estimatedDurationMs: 8 * 60_000 },
   ];
-  const kept = applyBudgetToQueue(tests, 10);
+  const { kept, skipped } = applyBudgetToQueue(tests, 10);
   assert.deepEqual(kept.map((t) => t.id), ['s']);
+  assert.deepEqual(skipped.map((t) => t.id), ['x', 'y']);
+  assert.ok(skipped.every((t) => t.skipReason === 'over_budget'));
+});
+
+test('budget clamps malformed / oversized values', () => {
+  const tests = [{ id: 'a', name: 'a', estimatedDurationMs: 1000 }];
+  // Non-finite values short-circuit to "no budget enforced"
+  assert.deepEqual(applyBudgetToQueue(tests, 'abc').kept.map((t) => t.id), ['a']);
+  assert.deepEqual(applyBudgetToQueue(tests, Infinity).kept.map((t) => t.id), ['a']);
+  // Massive values cap at MAX_BUDGET_MINUTES (240) — no exception, no crash
+  assert.deepEqual(applyBudgetToQueue(tests, 1e9).kept.map((t) => t.id), ['a']);
 });
 
 test('changed page boosts risk score', () => {

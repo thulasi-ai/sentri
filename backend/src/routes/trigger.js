@@ -32,7 +32,7 @@ import { expensiveOpLimiter, signRunArtifacts } from "../middleware/appSetup.js"
 import { requireTrigger } from "../middleware/authenticate.js";
 import { fireNotifications } from "../utils/notifications.js";
 import { validateUrl, safeFetch } from "../utils/ssrfGuard.js";
-import { orderTestsByRisk, applyBudgetToQueue } from "../pipeline/riskScorer.js";
+import { orderTestsByRisk, applyBudgetToQueue, normalizeBudgetMinutes } from "../pipeline/riskScorer.js";
 
 // ─── SSRF protection for callbackUrl ──────────────────────────────────────────
 // Two-layer defence provided by utils/ssrfGuard.js:
@@ -242,9 +242,16 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
   const previewUrl = typeof req.body?.previewUrl === "string" ? req.body.previewUrl : null;
   const allTests = testRepo.getByProjectId(project.id);
   const tests = allTests.filter((t) => t.reviewStatus === "approved");
-  const history = runRepo.getByProjectId(project.id).flatMap((r) => Array.isArray(r.results) ? r.results : []);
-  const riskOrderedTests = orderTestsByRisk(tests, history, { changedPages: [] });
-  const selectedTests = applyBudgetToQueue(riskOrderedTests, budgetMinutes);
+  // AUTO-001: risk-ordered + budget-capped dispatch set. `tests` (approved order)
+  // is preserved for the audit-trail `testIds` snapshot below; reorder is for
+  // DISPATCH only.
+  const projectRuns = runRepo.getByProjectId(project.id);
+  const history = projectRuns.flatMap((r) => Array.isArray(r.results) ? r.results : []);
+  const latestCrawl = projectRuns.find((r) => r.type === "crawl" && Array.isArray(r.changedPages) && r.changedPages.length);
+  const changedPages = (latestCrawl?.changedPages || []).map((p) => p?.url || p).filter(Boolean);
+  const safeBudget = normalizeBudgetMinutes(budgetMinutes);
+  const riskOrderedTests = orderTestsByRisk(tests, history, { changedPages });
+  const { kept: selectedTests } = applyBudgetToQueue(riskOrderedTests, safeBudget);
   if (!triggerCrawl) {
     if (!allTests.length) return res.status(400).json({ error: "No tests found — crawl first." });
     if (!tests.length) return res.status(400).json({ error: "No approved tests — review generated tests before triggering." });
@@ -311,7 +318,10 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
           run,
           { dialsPrompt, testCount, explorerMode, explorerTuning, signal }
         )
-      : runTests(project, tests, run, { parallelWorkers, signal }),
+      // AUTO-001: dispatch the risk-ordered + budget-capped subset, not the
+      // full approved set. The persisted run (buildTestRun) still records the
+      // approved-test order via `tests` for audit fidelity.
+      : runTests(project, selectedTests, run, { parallelWorkers, signal }),
     {
       onSuccess: () => {
         logActivity({
