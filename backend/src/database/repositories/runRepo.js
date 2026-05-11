@@ -86,6 +86,7 @@ const INSERT_COLS = [
   "webVitalsResult", // AUTO-017: web vitals budget pass/fail summary
   "secretScanBlocked", // CAP-003: set when post-generation secret scanner rejects any test (migration 015)
   "changedPages", "removedPages", // AUTO-002: diff-aware crawl page-change summary (migration 020)
+  "budgetMinutes", // AUTO-001: wall-clock budget applied to dispatch queue (migration 021)
 ];
 
 const INSERT_SQL = `INSERT INTO runs (${INSERT_COLS.join(", ")})
@@ -336,6 +337,36 @@ export function getRecentCompletedWithResults(projectId, limit = 20) {
     }
     return row;
   });
+}
+
+/**
+ * AUTO-001: Lean accessor for the most recent crawl run that produced a
+ * non-empty `changedPages[]` summary. Used by the risk-scoring path in
+ * `routes/runs.js` and `routes/trigger.js` so a project with hundreds of
+ * historical runs doesn't have to deserialize every row's heavy JSON columns
+ * just to read the latest crawl's diff payload. Selects only `id`,
+ * `startedAt`, `changedPages` and bounds the SQL with `LIMIT 1`.
+ *
+ * Returns the parsed `{ id, startedAt, changedPages }` shape or `null` when
+ * no crawl has produced a non-empty changedPages array yet.
+ *
+ * @param {string} projectId
+ * @returns {{ id: string, startedAt: string, changedPages: Array }|null}
+ */
+export function getLatestCrawlWithChangedPages(projectId) {
+  const db = getDatabase();
+  const row = db.prepare(
+    `SELECT id, startedAt, changedPages FROM runs
+     WHERE projectId = ? AND deletedAt IS NULL
+       AND type = 'crawl'
+       AND changedPages IS NOT NULL AND changedPages != '[]'
+     ORDER BY startedAt DESC LIMIT 1`
+  ).get(projectId);
+  if (!row?.changedPages) return null;
+  let parsed;
+  try { parsed = JSON.parse(row.changedPages); } catch { return null; }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  return { id: row.id, startedAt: row.startedAt, changedPages: parsed };
 }
 
 // ─── Write operations ─────────────────────────────────────────────────────────
