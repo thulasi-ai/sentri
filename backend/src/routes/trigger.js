@@ -36,6 +36,7 @@ import { validateUrl, safeFetch } from "../utils/ssrfGuard.js";
 import { orderTestsByRisk, applyBudgetToQueue, normalizeBudgetMinutes } from "../pipeline/riskScorer.js";
 import { createPending, markInProgress, conclude, buildRunUrl } from "../integrations/githubChecks.js";
 import { findGreenBaseRun, renderGithubCheckSummary, conclusionForRun } from "../utils/runResultFormatters.js";
+import { formatLogLine } from "../utils/logFormatter.js";
 
 // ─── SSRF protection for callbackUrl ──────────────────────────────────────────
 // Two-layer defence provided by utils/ssrfGuard.js:
@@ -227,7 +228,9 @@ async function concludeGithubCheck(finishedRun, project) {
     });
     runRepo.update(finishedRun.id, { githubCheck: { ...check, status: "completed", conclusion: conclusionForRun(finishedRun), completedAt: new Date().toISOString() } });
   } catch (err) {
-    console.warn(`[github-checks] Failed to conclude check for run ${finishedRun.id}: ${err.message}`);
+    // INT-002 anti-pattern guard: a GitHub 5xx must never fail the underlying
+    // Sentri run — log and swallow.
+    console.error(formatLogLine("warn", finishedRun.id, `[github-checks] Failed to conclude check: ${err.message}`));
   }
 }
 
@@ -368,15 +371,16 @@ async function handleTrigger(req, res) {
   runRepo.create(run);
 
   if (!triggerCrawl) {
+    // INT-002: GitHub Check Run setup is best-effort. A GitHub outage / 5xx
+    // / misconfiguration must never block the underlying Sentri run — the
+    // run itself is the source of truth; the PR check is a notification
+    // surface. Failures here are logged and swallowed, mirroring the
+    // `concludeGithubCheck` contract on the completion side.
     try {
       run.githubCheck = await prepareGithubCheck(project, req.body || {}, runId);
       if (run.githubCheck) runRepo.update(runId, { githubCheck: run.githubCheck });
     } catch (err) {
-      run.status = "failed";
-      run.error = err.message;
-      run.finishedAt = new Date().toISOString();
-      runRepo.save(run);
-      return res.status(400).json({ error: err.message });
+      console.error(formatLogLine("warn", runId, `[github-checks] Failed to create pending check: ${err.message}`));
     }
   }
 
