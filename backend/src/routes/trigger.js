@@ -260,7 +260,13 @@ async function concludeGithubCheck(finishedRun, project) {
   const check = finishedRun?.githubCheck;
   if (!check?.checkRunId || !check.repo || !check.installationId) return;
   try {
-    const projectRuns = runRepo.getByProjectId(project.id);
+    // INT-002 perf: use the lean accessor instead of `getByProjectId()` —
+    // the latter loads every historical run with full JSON deserialization
+    // (testQueue, promptAudit, qualityAnalytics, …) which becomes a real
+    // latency cost on projects with hundreds of runs. The base-run lookup
+    // only needs id/type/status/failed/githubCheck/results, bounded to the
+    // 25-run lookback `findGreenBaseRun` already enforces.
+    const projectRuns = runRepo.getRecentTestRunsForGithubBase(project.id);
     const baseRun = findGreenBaseRun(projectRuns, check.baseSha, check.repo);
     const summaryMd = renderGithubCheckSummary(finishedRun, { baseRun, runUrl: buildRunUrl(finishedRun.id) || "" });
     await conclude(check.checkRunId, {

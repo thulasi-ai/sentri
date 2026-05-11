@@ -223,9 +223,18 @@ export function getByProjectId(projectId) {
  * reuse the prior check and overwrite its conclusion, which is
  * surprising behaviour for an industry-standard QA platform.
  *
- * Uses SQLite's `json_extract` to filter directly on the `githubCheck`
- * JSON column so long-lived PRs with many unrelated intervening runs
- * still match correctly.
+ * Implementation note — cross-dialect lookup via `LIKE`:
+ * The natural query here is `WHERE json_extract(githubCheck, '$.deliveryId') = ?`,
+ * but `json_extract()` is SQLite-specific and the Postgres adapter
+ * (`backend/src/database/adapters/postgres-adapter.js`) has no translation
+ * rule for it — so the query would crash on every webhook retry on Postgres
+ * deployments. We instead use a `LIKE` pre-filter against the serialized
+ * JSON column (matching the established pattern in
+ * `backend/src/database/repositories/activityRepo.js:206`, which also avoids
+ * `json_extract` for the same reason) and verify the parsed `deliveryId`
+ * field in JS. The pre-filter narrows long-lived PRs to a tiny candidate
+ * set; the JS-side check is the source of truth and rejects accidental
+ * substring matches in unrelated JSON fields.
  *
  * @param {string} projectId
  * @param {string} deliveryId — value of the `X-GitHub-Delivery` header.
@@ -234,13 +243,24 @@ export function getByProjectId(projectId) {
 export function findByGithubDeliveryId(projectId, deliveryId) {
   if (!deliveryId) return undefined;
   const db = getDatabase();
-  const row = db.prepare(
+  // The delivery ID is embedded as `"deliveryId":"<uuid>"` in the JSON-serialized
+  // githubCheck column. We escape SQL LIKE wildcards in the user-supplied
+  // delivery ID before interpolating into the pattern, so a malicious /
+  // malformed UUID can't broaden the match.
+  const safeDeliveryId = String(deliveryId).replace(/[\\%_]/g, (c) => `\\${c}`);
+  const pattern = `%"deliveryId":"${safeDeliveryId}"%`;
+  const rows = db.prepare(
     `SELECT * FROM runs
      WHERE projectId = ? AND deletedAt IS NULL
-       AND json_extract(githubCheck, '$.deliveryId') = ?
-     ORDER BY startedAt DESC LIMIT 1`
-  ).get(projectId, deliveryId);
-  return row ? rowToRun(row) : undefined;
+       AND githubCheck IS NOT NULL
+       AND githubCheck LIKE ? ESCAPE '\\'
+     ORDER BY startedAt DESC LIMIT 10`
+  ).all(projectId, pattern);
+  for (const row of rows) {
+    const run = rowToRun(row);
+    if (run?.githubCheck?.deliveryId === deliveryId) return run;
+  }
+  return undefined;
 }
 
 /**
@@ -374,6 +394,49 @@ export function getRecentCompletedWithResults(projectId, limit = 20) {
      ORDER BY startedAt DESC LIMIT ?`
   ).all(projectId, limit);
   return rows.map(row => {
+    if (row.results) {
+      try { row.results = JSON.parse(row.results); } catch { row.results = []; }
+    } else {
+      row.results = [];
+    }
+    return row;
+  });
+}
+
+/**
+ * INT-002: Lean accessor for recent completed test runs that posted a GitHub
+ * Check Run. Used by `concludeGithubCheck` to find a green base run for
+ * regressed-test diff rendering without loading every project run's heavy
+ * JSON columns (`testQueue`, `promptAudit`, `qualityAnalytics`, …).
+ *
+ * Selects only the columns `findGreenBaseRun` reads
+ * (`backend/src/utils/runResultFormatters.js`):
+ *   - `id`, `type`, `status`, `failed` — eligibility filtering
+ *   - `githubCheck` — repo/sha match
+ *   - `results` — green-test set for the diff
+ *
+ * The lookback is bounded by `limit` (default 25, matching
+ * `BASE_LOOKBACK_RUNS` in the formatter) so a project with thousands of
+ * historical runs doesn't trigger an O(n) deserialize on every check
+ * completion.
+ *
+ * @param {string} projectId
+ * @param {number} [limit=25]
+ * @returns {Object[]} Newest-first, parsed `githubCheck` + `results`.
+ */
+export function getRecentTestRunsForGithubBase(projectId, limit = 25) {
+  const db = getDatabase();
+  const rows = db.prepare(
+    `SELECT id, type, status, failed, githubCheck, results FROM runs
+     WHERE projectId = ? AND deletedAt IS NULL
+       AND type IN ('test_run', 'run') AND status = 'completed'
+       AND githubCheck IS NOT NULL
+     ORDER BY startedAt DESC LIMIT ?`
+  ).all(projectId, limit);
+  return rows.map((row) => {
+    if (row.githubCheck) {
+      try { row.githubCheck = JSON.parse(row.githubCheck); } catch { row.githubCheck = null; }
+    }
     if (row.results) {
       try { row.results = JSON.parse(row.results); } catch { row.results = []; }
     } else {
