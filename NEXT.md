@@ -42,15 +42,16 @@ Sentri runs every approved test on every trigger. An autonomous system should *o
 - Default behaviour with no budget is identical to today (full queue, just reordered) — zero regression for existing schedules.
   **Anti-patterns to reject in review:** hard-coding risk weights (expose via config so operators can tune) · silently dropping budget-truncated tests without a status marker (violates observability — every test must have a resolution) · ignoring AUTO-002's `changedPages[]` (the strongest available signal; not wiring it defeats the sprint rationale for promoting AUTO-001 after AUTO-002) · mutating `runQueue` in place before persistence (reorder for dispatch only — the saved run must preserve the original approved-test order for auditability).
 ### PR checklist (AUTO-001)
-- [ ] New `backend/src/pipeline/riskScorer.js` as pure function (input: test + history + changedPages; output: number) — no DB access inside the scorer itself
-- [ ] `testRunner.js` sorts the dispatch queue by `riskScore` DESC; saved run still reflects the original approved-test ordering
-- [ ] `budgetMinutes` param flows through `trigger.js` / `runs.js` with a per-project max so a malformed value can't exhaust the worker pool
-- [ ] Always-run smoke tests (`test.isSmoke`) are pinned to the front regardless of budget truncation
-- [ ] Change-affected tests (test's `sourceUrl` ∈ AUTO-002 `changedPages[]`) receive a strong risk boost
-- [ ] `backend/tests/risk-scorer.test.js` covers flaky-test ranking, recently-edited boost, smoke-test pin, budget truncation, and changedPages weighting — registered in `backend/tests/run-tests.js`
-- [ ] `RunDetail.jsx` surfaces `riskScore` chip + "skipped (over budget)" status
-- [ ] `docs/changelog.md` updated under `## [Unreleased]`
-- [ ] Frontend consumer ships for any new backend route (PROC-001)
+- [x] New `backend/src/pipeline/riskScorer.js` as pure function (input: test + history + changedPages; output: number) — no DB access inside the scorer itself
+- [x] `testRunner.js` sorts the dispatch queue by `riskScore` DESC; saved run still reflects the original approved-test ordering
+- [x] `budgetMinutes` param flows through `trigger.js` / `runs.js`, server-side clamped via `normalizeBudgetMinutes()` to `MAX_BUDGET_MINUTES = 240` so a malformed value can't exhaust the worker pool
+- [x] Always-run smoke tests (tags `["smoke"]` or `smoke` substring in name) pinned to the front regardless of budget truncation — runner-layer invariant in `testRunner.js`
+- [x] Change-affected tests (test's `sourceUrl` ∈ AUTO-002 `changedPages[]`) receive a strong risk boost
+- [x] `backend/tests/risk-scorer.test.js` covers flaky-test ranking, recently-edited boost, smoke-test pin, budget truncation with skipped-resolution surfacing, malformed/oversized budget clamp, runner-level smoke-pin invariant, BullMQ worker order-preservation invariant, and changedPages weighting — registered in `backend/tests/run-tests.js`
+- [x] `RunDetail.jsx` surfaces `riskScore` chip + "skipped (over budget)" status badge + "budget: Nm" label
+- [x] Trigger-token path (`routes/trigger.js`) byte-aligned with JWT path (`routes/runs.js`): `buildTestRun()` pre-seeds skipped-over-budget markers, embeds per-row `riskScore` in `testQueue`, activity-log + telemetry reflect dispatched (not approved) counts
+- [x] `docs/changelog.md` updated under `## [Unreleased]`
+- [x] Frontend consumer ships for any new backend route (PROC-001) — no new routes added; `budgetMinutes` is a body param on existing endpoints
 
 ---
 

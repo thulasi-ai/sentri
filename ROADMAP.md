@@ -15,7 +15,7 @@
 >
 > Come back here only to: look up a specific item by ID (Ctrl+F the ID e.g. `DIF-008`), check completed work history, or review phase/competitive context.
 >
-> **Current sprint:** `AI-001` (generic OpenAI-compatible provider adapter) — promoted per `NEXT.md` rotation after `AUTO-002 + AUTO-015` shipped in PR #12 · **Blockers:** none remaining · **Remaining:** ~26 planned items across Phases 2–4 + Maintenance — see the Summary table at the bottom of this document for the authoritative breakdown. Recent ships: AUTO-002 + AUTO-015 + AUTO-002b + AUTO-015b ✅ PR #12 (diff-aware crawling for link-crawl AND state-explorer modes via composite-key baselines, Vercel/Netlify webhook triggers with HMAC verification, "Last deployment run" badge); AUTO-003 + AUTO-003b ✅ PR #10 (confidence-based auto-approval + provenance / revoke / audit trail); AUTO-017.3 + PROC-001 ✅ PR #9 (Web Vitals trend charts + no-orphan-routes CI guard); CAP-004 + MET-001 ✅ PR #8 (self-healing dashboard + time-series metric primitive); CAP-003 ✅ PR #12; UI-REFACTOR-001 ✅ PR #6; DIF-015b Gap 3 + DIF-015c Gap 1 ✅ PR #11; AUTO-019 ✅ PR #10; DIF-005 ✅ PR #9; AUTO-017 ✅ PR #8. PROC-002 + PROC-003 (sprint-promotion automation, originally PR #8 / PR #9) reverted in PR #10 — see Completed Work Summary row.
+> **Current sprint:** `AUTO-001` (risk-based test selection / ordering) — promoted per `NEXT.md` rotation after `AI-001` shipped in PR #14 · **Blockers:** none remaining · **Remaining:** ~25 planned items across Phases 2–4 + Maintenance — see the Summary table at the bottom of this document for the authoritative breakdown. Recent ships: AI-001 ✅ PR #14 (generic OpenAI-compatible provider slots `compat:<id>` with SSRF-guarded per-call fetch, TTL cache + Redis pub/sub invalidation, per-slot circuit breakers, Settings UI); AUTO-002 + AUTO-015 + AUTO-002b + AUTO-015b ✅ PR #12 (diff-aware crawling for link-crawl AND state-explorer modes via composite-key baselines, Vercel/Netlify webhook triggers with HMAC verification, "Last deployment run" badge); AUTO-003 + AUTO-003b ✅ PR #10 (confidence-based auto-approval + provenance / revoke / audit trail); AUTO-017.3 + PROC-001 ✅ PR #9 (Web Vitals trend charts + no-orphan-routes CI guard); CAP-004 + MET-001 ✅ PR #8 (self-healing dashboard + time-series metric primitive); CAP-003 ✅ PR #12; UI-REFACTOR-001 ✅ PR #6; DIF-015b Gap 3 + DIF-015c Gap 1 ✅ PR #11; AUTO-019 ✅ PR #10; DIF-005 ✅ PR #9; AUTO-017 ✅ PR #8. PROC-002 + PROC-003 (sprint-promotion automation, originally PR #8 / PR #9) reverted in PR #10 — see Completed Work Summary row.
 
 ---
 
@@ -131,7 +131,7 @@ The following items have been verified complete against the codebase and are **n
 | Phase 1 — Production Hardening | Security, reliability, data integrity | ✅ Complete                                                                                                                                                                            | — |
 | Phase 2 — Team & Enterprise Foundation | Auth hardening, multi-tenancy, RBAC, queues | ✅ Mostly complete — SEC-001/002/003, INF-001/002/003/004/005/006, ACL-001/002, FEA-001/002/003, ENH-036 + ENH-036b all ✅; only SEC-004 (MFA) + SEC-005 (SSO) remain, both deferred until enterprise demand | 8–10 weeks |
 | Phase 3 — AI-Native Differentiation | Visual regression, cross-browser, competitive features | 🔄 In progress — most differentiators shipped (DIF-001/002/002b/003/004/005/006/007/011/013/014/015/016 ✅ — DIF-005 embedded trace viewer shipped in PR #9); remaining: DIF-008–010, DIF-012, DIF-015b/c sub-items, INT-002 | 10–12 weeks |
-| Phase 4 — Autonomous Intelligence | Risk-based testing, change detection, quality gates | 🔄 In progress — AUTO-002/002b/003/003b/005/006/007/012/013/015/015b/016/016b/017/017.3/019 ✅; remaining: AUTO-001/004, AUTO-008–011, AUTO-014, AUTO-018, AUTO-021 (AUTO-020 superseded by AUTO-015) · Capabilities row (CAP-001 data-driven, CAP-002 sharding) tracked separately in Summary | 14–18 weeks |
+| Phase 4 — Autonomous Intelligence | Risk-based testing, change detection, quality gates | 🔄 In progress — AUTO-002/002b/003/003b/005/006/007/012/013/015/015b/016/016b/017/017.3/019 ✅; AUTO-001 🔄 PR #15 (risk-based test selection); remaining: AUTO-004, AUTO-008–011, AUTO-014, AUTO-018, AUTO-021 (AUTO-020 superseded by AUTO-015) · Capabilities row (CAP-001 data-driven, CAP-002 sharding) tracked separately in Summary | 14–18 weeks |
 | Ongoing — Maintenance & Platform Health | Healing AI, DX, exports, accessibility | 🔄 Continuous                                                                                                                                                                         | — |
 
 ---
@@ -425,7 +425,7 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 
 ### AUTO-001 — Intelligent test selection (risk-based run ordering) 🟢 Differentiator
 
-**Status:** 🔲 Planned | **Effort:** L | **Source:** Competitive Gap Analysis
+**Status:** 🔄 In Progress (PR #15) | **Effort:** L | **Source:** Competitive Gap Analysis
 
 **Problem:** Sentri runs all approved tests in insertion order on every run. An autonomous system should prioritise: run tests covering recently changed code first, run previously-failing tests first, and skip tests for unchanged pages. No ordering logic exists in `testRunner.js` or `scheduler.js`. Mabl and Testim both offer smart test selection.
 
@@ -757,16 +757,16 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 | Multi-tenancy / RBAC | ✅ ACL-001/ACL-002 | ✅ | ✅ | ✅ | N/A |
 | Standalone export | ✅ DIF-006 | ❌ Lock-in | ❌ Lock-in | ❌ Lock-in | N/A |
 | Flaky test detection | ✅ DIF-004 | ✅ | ✅ | ✅ | ❌ |
-| Risk-based test selection | 🔄 AUTO-002 ✅ PR #12 (change-detection foundation) → AUTO-001 next | ✅ | Partial | ✅ BearQ smart selection † | ❌ |
+| Risk-based test selection | 🔄 AUTO-001 PR #15 (consumes AUTO-002's `changedPages` signal) | ✅ | Partial | ✅ BearQ smart selection † | ❌ |
 | Accessibility testing | ✅ (backend) / 🔄 AUTO-016b (UI) | ✅ | ❌ | Partial | Via plugins |
 | Performance budgets | ❌ → AUTO-017 | ❌ | ❌ | Via Lighthouse | ❌ |
 | Quality gate enforcement | ✅ AUTO-012 (PR #2) | ✅ | ✅ | ✅ | Via Playwright |
 
 **Sentri's unique strengths:** Self-hosted + AI generation + human review queue + multi-provider LLM + standalone Playwright export (✅ DIF-006). No competitor offers all five together. BearQ narrows the AI generation gap but remains SaaS-only with no self-hosted option or LLM provider choice.
 
-**Critical gaps to close next:** AI-001 (generic OpenAI-compatible provider adapter — current PR) · AUTO-001 (risk-based test selection, now unblocked by AUTO-002) · AUTO-004 (test impact analysis from git diff, now unblocked by AUTO-002) · INT-002 (GitHub PR check comments).
+**Critical gaps to close next:** AUTO-001 (risk-based test selection — current PR #15, consumes AUTO-002's `changedPages` signal) · AUTO-004 (test impact analysis from git diff, builds on AUTO-001's risk scorer) · INT-002 (GitHub PR check comments).
 
-> **Previous priorities ✅ shipped:** DIF-001 · DIF-002/002b · DIF-003 · DIF-004 · DIF-005 · DIF-006 · DIF-007 · DIF-011 · DIF-013 · DIF-014 · DIF-015 · DIF-015b · DIF-016 · AUTO-002/002b/005/006/007/012/013/015/015b/016/016b/017/019 · CAP-003 · CAP-004 · MET-001 · UI-REFACTOR-001.
+> **Previous priorities ✅ shipped:** DIF-001 · DIF-002/002b · DIF-003 · DIF-004 · DIF-005 · DIF-006 · DIF-007 · DIF-011 · DIF-013 · DIF-014 · DIF-015 · DIF-015b · DIF-016 · AUTO-002/002b/005/006/007/012/013/015/015b/016/016b/017/019 · AI-001 (PR #14) · CAP-003 · CAP-004 · MET-001 · UI-REFACTOR-001.
 
 ---
 
@@ -779,7 +779,7 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 | Access Control | 2 | 2 | 0 | 0 | — |
 | Platform Features | 4 | 4 | 0 | 0 | — |
 | Differentiators | 22 | 16 | 0 | 6 | DIF-002c, 008, 009, 010, 012, 015c (sub-gaps 2–6) |
-| Autonomous Intelligence | 25 | 16 | 0 | 9 | AUTO-001/004/008–011/014/018/021 (AUTO-020 superseded by AUTO-015) |
+| Autonomous Intelligence | 25 | 16 | 1 | 8 | AUTO-001 🔄 PR #15 · pending: AUTO-004/008–011/014/018/021 (AUTO-020 superseded by AUTO-015) |
 | Capabilities | 4 | 2 | 0 | 2 | CAP-001 (data-driven testing), CAP-002 (test sharding) |
 | Process automation | 1 | 1 | 0 | 0 | — |
 | Maintenance | 11 | 5 | 0 | 6 | MNT-001/002/003/004/005/008 |
@@ -801,12 +801,12 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
       items themselves are gone from the ledger, not just unshipped).
     - Net Totals impact: Total 83 → 81, Done 55 → 53, Pending unchanged at 28.
 -->
-**Total tracked items:** 80 across 9 categories — **55 complete** (69%), **0 in current PR**, **25 remaining**
+**Total tracked items:** 80 across 9 categories — **55 complete** (69%), **1 in current PR** (AUTO-001), **24 remaining**
 
 **Blockers (must ship before team deployment):** All resolved. ✅
 
-**Recommended PR order (next after AI-001 ships):**
-`AI-001` (current PR — generic OpenAI-compatible provider adapter) → `AUTO-001` (risk-based test selection, consumes AUTO-002's `changedPages` signal — now unblocked) → `AUTO-004` (test impact analysis from git diff — the narrative capstone for Phase 4, depends on AUTO-002).
+**Recommended PR order (next after AUTO-001 ships):**
+`AUTO-001` (current PR #15 — risk-based test selection, consumes AUTO-002's `changedPages` signal) → `INT-002` (GitHub PR check comments — leverages existing trigger token infrastructure) → `AUTO-004` (test impact analysis from git diff — the narrative capstone for Phase 4, builds on AUTO-001's risk scorer).
 
 **Lowest effort / highest immediate value:**
 `INT-002` (M — GitHub PR check comments) · `DIF-012` (L — multi-environment, high enterprise-demand) · `MNT-004` (L — fixtures, complements CAP-001).
