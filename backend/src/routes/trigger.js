@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import * as runRepo from "../database/repositories/runRepo.js";
 import * as testRepo from "../database/repositories/testRepo.js";
 import * as webhookTokenRepo from "../database/repositories/webhookTokenRepo.js";
+import * as githubCheckSettingsRepo from "../database/repositories/githubCheckSettingsRepo.js";
 import { generateRunId } from "../utils/idGenerator.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { runWithAbort } from "../utils/runWithAbort.js";
@@ -33,6 +34,9 @@ import { requireTrigger } from "../middleware/authenticate.js";
 import { fireNotifications } from "../utils/notifications.js";
 import { validateUrl, safeFetch } from "../utils/ssrfGuard.js";
 import { orderTestsByRisk, applyBudgetToQueue, normalizeBudgetMinutes } from "../pipeline/riskScorer.js";
+import { createPending, markInProgress, conclude, buildRunUrl } from "../integrations/githubChecks.js";
+import { findGreenBaseRun, renderGithubCheckSummary, conclusionForRun } from "../utils/runResultFormatters.js";
+import { formatLogLine } from "../utils/logFormatter.js";
 
 // ─── SSRF protection for callbackUrl ──────────────────────────────────────────
 // Two-layer defence provided by utils/ssrfGuard.js:
@@ -132,7 +136,7 @@ function buildCrawlRun({ runId, project, dialsConfig }) {
  * @param {number} args.parallelWorkers
  * @returns {object} the run record ready for `runRepo.create()`.
  */
-function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, budgetMinutes = null, parallelWorkers }) {
+function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, budgetMinutes = null, parallelWorkers, githubCheck = null }) {
   const lookup = riskById || new Map();
   const initialResults = budgetSkipped.map((t) => ({
     testId: t.id,
@@ -159,7 +163,118 @@ function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, bud
     })),
     budgetMinutes,
     workspaceId: project.workspaceId || null,
+    githubCheck,
   };
+}
+
+
+function normalizeGithubPayload(body = {}) {
+  const repo = typeof body.repo === "string" ? body.repo.trim()
+    : body.repository?.full_name ? String(body.repository.full_name).trim() : "";
+  const sha = typeof body.sha === "string" ? body.sha.trim()
+    : body.check_suite?.head_sha ? String(body.check_suite.head_sha).trim()
+    : body.pull_request?.head?.sha ? String(body.pull_request.head.sha).trim() : "";
+  const baseSha = typeof body.baseSha === "string" ? body.baseSha.trim()
+    : body.pull_request?.base?.sha ? String(body.pull_request.base.sha).trim() : null;
+  const prNumber = Number.isInteger(body.prNumber) ? body.prNumber
+    : Number.isInteger(body.number) ? body.number
+    : Number.isInteger(body.pull_request?.number) ? body.pull_request.number : null;
+  return { repo, sha, baseSha, prNumber };
+}
+
+/**
+ * Prepare a GitHub Check Run for a Sentri run, returning the metadata to
+ * persist on `run.githubCheck` (or `null` when no check should be created).
+ *
+ * **Idempotency contract (INT-002):**
+ * GitHub retries failed webhook deliveries (any non-2xx) with exponential
+ * backoff for up to 24h, always using the same `X-GitHub-Delivery` UUID.
+ * The delivery ID — not the commit SHA — is the correct idempotency key:
+ *   - Same delivery ID → GitHub is retrying. Return existing check, do not
+ *     create a new run, do not transition state on GitHub.
+ *   - New delivery ID for the same SHA → distinct event (e.g. `rerequested`
+ *     after a user clicks "Re-run"). Create a fresh Check Run.
+ *
+ * @param {Object} project
+ * @param {Object} body          — trigger request body (already merged with normalizeGithubPayload).
+ * @param {string} runId
+ * @param {string|null} deliveryId — value of the `X-GitHub-Delivery` header, when present.
+ * @returns {Promise<Object|null>}
+ */
+async function prepareGithubCheck(project, body, runId, deliveryId = null) {
+  const payload = normalizeGithubPayload(body);
+  if (!payload.repo || !payload.sha) return null;
+  const settings = githubCheckSettingsRepo.getByProjectId(project.id);
+  if (!settings?.enabled) return null;
+  if (settings.repo && settings.repo !== payload.repo) return null;
+  if (!settings.installationId) throw new Error("GitHub installationId is not configured for this project");
+
+  // Retry-delivery idempotency: same X-GitHub-Delivery ⇒ same check, no
+  // state transition. The caller (handleTrigger) short-circuits when it
+  // detects `reused: true` so the underlying Sentri run is also skipped.
+  if (deliveryId) {
+    const existing = runRepo.findByGithubDeliveryId(project.id, deliveryId);
+    if (existing?.githubCheck?.checkRunId) {
+      return { ...existing.githubCheck, reused: true, reusedRunId: existing.id };
+    }
+  }
+
+  const checkRun = await createPending(runId, {
+    repo: payload.repo,
+    sha: payload.sha,
+    installationId: settings.installationId,
+  });
+  await markInProgress(checkRun.id, { repo: payload.repo, installationId: settings.installationId });
+  return {
+    checkRunId: checkRun.id,
+    deliveryId: deliveryId || null,
+    repo: payload.repo,
+    sha: payload.sha,
+    baseSha: payload.baseSha,
+    prNumber: payload.prNumber,
+    installationId: settings.installationId,
+    status: "in_progress",
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Conclude a GitHub Check Run once the Sentri run reaches a terminal state.
+ *
+ * **Placement rationale (deviates from NEXT.md INT-002 sketch):**
+ * NEXT.md suggests this hook lives in `testRunner.js` `onComplete`. We keep
+ * it here because (a) `testRunner.js` has no internal completion hook —
+ * `runWithAbort.onComplete` *is* the hook, fired from this file already;
+ * (b) only the trigger path carries GitHub repo/sha context, so wiring it
+ * through the runner would require threading `run.githubCheck` plumbing
+ * into a module that has no other reason to know about integrations;
+ * (c) keeping integration side-effects at the route layer matches the
+ * pattern used by `fireNotifications` (FEA-001) just above this call.
+ * Errors are always logged + swallowed so a GitHub outage never fails the
+ * underlying Sentri run (INT-002 anti-pattern guard).
+ *
+ * @param {Object} finishedRun
+ * @param {Object} project
+ */
+async function concludeGithubCheck(finishedRun, project) {
+  const check = finishedRun?.githubCheck;
+  if (!check?.checkRunId || !check.repo || !check.installationId) return;
+  try {
+    const projectRuns = runRepo.getByProjectId(project.id);
+    const baseRun = findGreenBaseRun(projectRuns, check.baseSha, check.repo);
+    const summaryMd = renderGithubCheckSummary(finishedRun, { baseRun, runUrl: buildRunUrl(finishedRun.id) || "" });
+    await conclude(check.checkRunId, {
+      repo: check.repo,
+      installationId: check.installationId,
+      conclusion: conclusionForRun(finishedRun),
+      summaryMd,
+    });
+    runRepo.update(finishedRun.id, { githubCheck: { ...check, status: "completed", conclusion: conclusionForRun(finishedRun), completedAt: new Date().toISOString() } });
+  } catch (err) {
+    // INT-002 anti-pattern guard: a GitHub 5xx must never fail the underlying
+    // Sentri run — log and swallow.
+    console.error(formatLogLine("warn", finishedRun.id, `[github-checks] Failed to conclude check: ${err.message}`));
+  }
 }
 
 /**
@@ -201,7 +316,7 @@ function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, bud
  * @param {Object}  req - Express request
  * @param {Object} res - Express response
  */
-router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (req, res) => {
+async function handleTrigger(req, res) {
   const { triggerToken: tokenRow, triggerProject: project } = req;
 
   // ── 3. Extract and validate optional config (async) ────────────────
@@ -246,6 +361,26 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
     maxActions:    validatedDials?.exploreMaxActions    ?? 8,
     actionTimeout: validatedDials?.exploreActionTimeout ?? 5000,
   };
+
+  // ── 3b. GitHub delivery-retry idempotency (INT-002) ───────────────────
+  // GitHub retries non-2xx webhook deliveries with the same X-GitHub-Delivery
+  // UUID for up to 24h. If we've already started a run for this exact
+  // delivery, ack with the existing runId + checkRunId and DO NOT create a
+  // second Sentri run. This is the only correct "duplicate" — same SHA from
+  // a distinct delivery (e.g. `check_suite.rerequested`) is a fresh event.
+  const githubDeliveryId = req.githubDeliveryId || null;
+  if (githubDeliveryId) {
+    const dup = runRepo.findByGithubDeliveryId(project.id, githubDeliveryId);
+    if (dup?.githubCheck?.checkRunId) {
+      const proto = req.headers["x-forwarded-proto"] || req.protocol;
+      const host  = req.headers["x-forwarded-host"]  || req.get("host");
+      return res.status(202).json({
+        runId: dup.id,
+        statusUrl: `${proto}://${host}/api/v1/projects/${project.id}/trigger/runs/${dup.id}`,
+        githubCheck: { checkRunId: dup.githubCheck.checkRunId, reused: true },
+      });
+    }
+  }
 
   // ── 4. Guard: no concurrent run ───────────────────────────────────────
   // From here to runRepo.create() the code is fully synchronous, so no
@@ -296,6 +431,20 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
     ? buildCrawlRun({ runId, project, dialsConfig: validatedDials })
     : buildTestRun({ runId, project, tests, budgetSkipped, riskById, budgetMinutes: safeBudget, parallelWorkers });
   runRepo.create(run);
+
+  if (!triggerCrawl) {
+    // INT-002: GitHub Check Run setup is best-effort. A GitHub outage / 5xx
+    // / misconfiguration must never block the underlying Sentri run — the
+    // run itself is the source of truth; the PR check is a notification
+    // surface. Failures here are logged and swallowed, mirroring the
+    // `concludeGithubCheck` contract on the completion side.
+    try {
+      run.githubCheck = await prepareGithubCheck(project, req.body || {}, runId, githubDeliveryId);
+      if (run.githubCheck) runRepo.update(runId, { githubCheck: run.githubCheck });
+    } catch (err) {
+      console.error(formatLogLine("warn", runId, `[github-checks] Failed to create pending check: ${err.message}`));
+    }
+  }
 
   // Record that this token was used (updates lastUsedAt)
   webhookTokenRepo.touch(tokenRow.id);
@@ -380,6 +529,7 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
       onComplete: async (finishedRun) => {
         // FEA-001: Fire failure notifications — best-effort
         try { await fireNotifications(finishedRun, project); } catch { /* best-effort */ }
+        await concludeGithubCheck(finishedRun, project);
 
         if (!callbackUrl || typeof callbackUrl !== "string") return;
         const payload = JSON.stringify({
@@ -406,7 +556,9 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
   const statusUrl = `${proto}://${host}/api/v1/projects/${project.id}/trigger/runs/${runId}`;
 
   res.status(202).json({ runId, statusUrl });
-});
+}
+
+router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, handleTrigger);
 
 /**
  * HMAC signature verification for deployment-webhook payloads.
@@ -425,7 +577,7 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
  * interoperability with the provider's signing scheme. When Vercel upgrades
  * their webhook signatures, bump `algo` for the `"vercel"` branch here.
  *
- * @param {"vercel"|"netlify"} provider
+ * @param {"vercel"|"netlify"|"github"} provider
  * @param {Buffer|undefined} rawBody - captured by the webhook-scoped
  *   express.json `verify` callback in `middleware/appSetup.js`.
  * @param {string|undefined} signatureHeader - the provider's signature header
@@ -433,7 +585,11 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
  * @returns {boolean}
  */
 function verifyWebhookSignature(provider, rawBody, signatureHeader) {
-  const secret = provider === "vercel" ? process.env.VERCEL_WEBHOOK_SECRET : process.env.NETLIFY_WEBHOOK_SECRET;
+  const secret = provider === "vercel"
+    ? process.env.VERCEL_WEBHOOK_SECRET
+    : provider === "github"
+    ? process.env.GITHUB_WEBHOOK_SECRET
+    : process.env.NETLIFY_WEBHOOK_SECRET;
   if (!secret || !signatureHeader || !rawBody) return false;
   const algo = provider === "vercel" ? "sha1" : "sha256";
   const expected = crypto.createHmac(algo, secret).update(rawBody).digest("hex");
@@ -560,6 +716,42 @@ async function launchPreviewCrawl({ project, previewUrl, provider, tokenRow, dia
  *      project should run — without this, a single global webhook secret
  *      would let any signed payload trigger any project ID in the URL).
  */
+
+// INT-002: GitHub fires webhooks for many event types — `ping` when the
+// hook is first installed, plus `push`, `issues`, `issue_comment`,
+// `workflow_run`, `star`, etc. depending on subscriptions. Without an
+// event-type filter, ANY delivery (including the install-time ping)
+// would launch a Sentri run. Mirror the Vercel/Netlify gate: only
+// PR-lifecycle events relevant to QA proceed; everything else is acked
+// 200 so GitHub stops retrying.
+const TRIGGERING_GITHUB_EVENTS = new Map([
+  ["pull_request", new Set(["opened", "synchronize", "reopened", "ready_for_review"])],
+  ["check_suite", new Set(["requested", "rerequested"])],
+]);
+
+router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, async (req, res) => {
+  const sig = req.get("X-Hub-Signature-256");
+  if (!verifyWebhookSignature("github", req.rawBody, sig)) return res.status(401).json({ error: "invalid signature" });
+
+  const event = req.get("X-GitHub-Event") || "";
+  const action = typeof req.body?.action === "string" ? req.body.action : "";
+  const allowedActions = TRIGGERING_GITHUB_EVENTS.get(event);
+  // `check_suite.requested` carries no `action`-bearing PR context on some
+  // forks, but the canonical webhook always supplies one. Reject events
+  // without a matching action — including `ping`, which has no action and
+  // no `pull_request` / `check_suite` payload.
+  if (!allowedActions || !allowedActions.has(action)) {
+    return res.status(200).json({ ok: true, ignored: true, reason: "event not triggering", event, action });
+  }
+
+  // Capture the GitHub delivery UUID so handleTrigger can dedupe retries.
+  // GitHub guarantees this header on every webhook delivery and reuses the
+  // same UUID across all retry attempts of a given delivery.
+  req.githubDeliveryId = req.get("X-GitHub-Delivery") || null;
+  req.body = { ...(req.body || {}), ...normalizeGithubPayload(req.body || {}) };
+  return handleTrigger(req, res);
+});
+
 router.post("/projects/:id/trigger/vercel", expensiveOpLimiter, requireTrigger, async (req, res) => {
   const sig = req.get("X-Vercel-Signature");
   if (!verifyWebhookSignature("vercel", req.rawBody, sig)) return res.status(401).json({ error: "invalid signature" });

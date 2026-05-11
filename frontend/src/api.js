@@ -597,6 +597,10 @@ export const api = {
       : req("POST", "/settings", { provider, apiKey }),
   /** @param {string} provider - Remove API key or deactivate Ollama. */
   deleteApiKey: (provider) => req("DELETE", `/settings/${provider}`),
+  /** @returns {Promise<{projects: Object[]}>} GitHub PR check settings per project. */
+  getGithubCheckSettings: () => req("GET", "/settings/github-checks"),
+  /** @param {string} projectId @param {{enabled: boolean, repo?: string, installationId?: string}} body */
+  updateGithubCheckSettings: (projectId, body) => req("PATCH", `/settings/github-checks/${projectId}`, body),
 
   // ── Ollama ──────────────────────────────────────────────────────────────────
   /** @returns {Promise<{ok: boolean, model?: string, availableModels?: string[], error?: string}>} */

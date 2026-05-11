@@ -34,6 +34,7 @@ const JSON_FIELDS = [
   "promptAudit", "pipelineStats", "feedbackLoop", "videoSegments",
   "qualityAnalytics", "pages", "gateResult", "webVitalsResult",
   "changedPages", "removedPages", // AUTO-002: diff-aware crawl page-change summary
+  "githubCheck", // INT-002: GitHub Check Run metadata
 ];
 
 function rowToRun(row) {
@@ -86,6 +87,7 @@ const INSERT_COLS = [
   "webVitalsResult", // AUTO-017: web vitals budget pass/fail summary
   "secretScanBlocked", // CAP-003: set when post-generation secret scanner rejects any test (migration 015)
   "changedPages", "removedPages", // AUTO-002: diff-aware crawl page-change summary (migration 020)
+  "githubCheck", // INT-002: GitHub Check Run metadata (migration 021)
   "budgetMinutes", // AUTO-001: wall-clock budget applied to dispatch queue (migration 021)
 ];
 
@@ -197,6 +199,48 @@ export function getByProjectId(projectId) {
   return db.prepare(
     "SELECT * FROM runs WHERE projectId = ? AND deletedAt IS NULL ORDER BY startedAt DESC"
   ).all(projectId).map(rowToRun);
+}
+
+
+/**
+ * Find a non-deleted run that was launched from a specific GitHub webhook
+ * delivery. Used to make duplicate PR webhooks idempotent (INT-002).
+ *
+ * GitHub stamps every webhook delivery with a unique UUID in the
+ * `X-GitHub-Delivery` header and retries the same UUID with exponential
+ * backoff for up to 24h on non-2xx responses. The delivery ID — not the
+ * commit SHA — is the correct idempotency key:
+ *
+ *   - Two deliveries for the same SHA but different delivery IDs are
+ *     **distinct events** (e.g. PR opened, then `check_suite.rerequested`
+ *     after a user clicks "Re-run"). Each deserves a fresh Check Run.
+ *   - Two deliveries for the *same* delivery ID are GitHub retrying the
+ *     same event. We must produce the same `checkRunId` and not launch
+ *     a duplicate run.
+ *
+ * The previous repo+SHA-based lookup conflated these two cases — a
+ * legitimate `rerequested` event for the same commit would silently
+ * reuse the prior check and overwrite its conclusion, which is
+ * surprising behaviour for an industry-standard QA platform.
+ *
+ * Uses SQLite's `json_extract` to filter directly on the `githubCheck`
+ * JSON column so long-lived PRs with many unrelated intervening runs
+ * still match correctly.
+ *
+ * @param {string} projectId
+ * @param {string} deliveryId — value of the `X-GitHub-Delivery` header.
+ * @returns {Object|undefined}
+ */
+export function findByGithubDeliveryId(projectId, deliveryId) {
+  if (!deliveryId) return undefined;
+  const db = getDatabase();
+  const row = db.prepare(
+    `SELECT * FROM runs
+     WHERE projectId = ? AND deletedAt IS NULL
+       AND json_extract(githubCheck, '$.deliveryId') = ?
+     ORDER BY startedAt DESC LIMIT 1`
+  ).get(projectId, deliveryId);
+  return row ? rowToRun(row) : undefined;
 }
 
 /**
