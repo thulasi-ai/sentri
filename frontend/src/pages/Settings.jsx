@@ -540,6 +540,7 @@ function fmtUptime(seconds) {
 
 const SETTINGS_TABS = [
   { key: "providers",   label: "AI Providers",  icon: <Zap size={14} />,      adminOnly: true },
+  { key: "integrations", label: "Integrations",   icon: <ExternalLink size={14} />, adminOnly: false },
   { key: "members",     label: "Members",       icon: <Users size={14} />,    adminOnly: true },
   { key: "execution",   label: "Execution",     icon: <Cpu size={14} />,      adminOnly: false },
   { key: "data",        label: "Data",          icon: <Database size={14} />, adminOnly: true },
@@ -1055,6 +1056,95 @@ function AccountTab() {
   );
 }
 
+
+function IntegrationsTab({ isAdmin }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api.getGithubCheckSettings();
+      setRows(data.projects || []);
+    } catch (err) {
+      setError(err.message || "Failed to load GitHub settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  function updateRow(projectId, patch) {
+    setRows(prev => prev.map(row => row.projectId === projectId ? { ...row, ...patch } : row));
+  }
+
+  async function saveRow(row) {
+    setSaving(row.projectId);
+    setError("");
+    try {
+      await api.updateGithubCheckSettings(row.projectId, {
+        enabled: !!row.enabled,
+        repo: row.repo || "",
+        installationId: row.installationId || "",
+      });
+      await load();
+    } catch (err) {
+      setError(err.message || "Failed to save GitHub settings.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="flex-col gap-lg">
+      <SectionTitle icon={<ExternalLink size={16} color="var(--accent)" />} title="Integrations" sub="Connect Sentri to developer workflows" />
+      <div className="card card-padded">
+        <div className="font-bold" style={{ marginBottom: 6 }}>GitHub PR checks</div>
+        <div className="text-sm text-muted" style={{ marginBottom: 14 }}>
+          Install the Sentri GitHub App, then enable native Check Runs per project. Existing projects stay disabled until toggled on.
+        </div>
+        <a className="btn btn-ghost btn-sm" href="https://github.com/apps" target="_blank" rel="noreferrer">
+          Install GitHub App <ExternalLink size={12} />
+        </a>
+      </div>
+
+      {error && <div className="st-status-err"><AlertCircle size={12} /> {error}</div>}
+      {loading ? <div className="text-sm text-muted">Loading GitHub integration settings…</div> : rows.map(row => (
+        <div key={row.projectId} className="card card-padded" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
+          <div>
+            <div className="font-bold">{row.projectName}</div>
+            <label className="text-xs text-muted" style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!row.enabled}
+                disabled={!isAdmin}
+                onChange={e => updateRow(row.projectId, { enabled: e.target.checked })}
+              />
+              Post PR checks
+            </label>
+          </div>
+          <div>
+            <label className="text-xs text-muted">Repository</label>
+            <input className="input" value={row.repo || ""} disabled={!isAdmin} placeholder="owner/repo" onChange={e => updateRow(row.projectId, { repo: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-xs text-muted">Installation ID</label>
+            <input className="input" value={row.installationId || ""} disabled={!isAdmin} placeholder="123456" onChange={e => updateRow(row.projectId, { installationId: e.target.value })} />
+          </div>
+          <button className="btn btn-primary btn-sm" disabled={!isAdmin || saving === row.projectId} onClick={() => saveRow(row)}>
+            {saving === row.projectId ? <RefreshCw size={13} className="spin" /> : <Check size={13} />} Save
+          </button>
+        </div>
+      ))}
+      {!isAdmin && <div className="hint">QA leads can view integration status. Admin access is required to change GitHub App settings.</div>}
+    </div>
+  );
+}
+
 export default function Settings() {
   usePageTitle("Settings");
   const navigate = useNavigate();
@@ -1248,6 +1338,9 @@ export default function Settings() {
 
       {/* ── Tab: Members ── */}
       {tab === "members" && isAdmin && <MembersTab />}
+
+      {/* ── Tab: Integrations ── */}
+      {tab === "integrations" && <IntegrationsTab isAdmin={isAdmin} />}
 
       {/* ── Tab: Execution (runtime defaults + system info) ── */}
       {tab === "execution" && <>

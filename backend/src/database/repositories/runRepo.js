@@ -34,6 +34,7 @@ const JSON_FIELDS = [
   "promptAudit", "pipelineStats", "feedbackLoop", "videoSegments",
   "qualityAnalytics", "pages", "gateResult", "webVitalsResult",
   "changedPages", "removedPages", // AUTO-002: diff-aware crawl page-change summary
+  "githubCheck", // INT-002: GitHub Check Run metadata
 ];
 
 function rowToRun(row) {
@@ -86,6 +87,7 @@ const INSERT_COLS = [
   "webVitalsResult", // AUTO-017: web vitals budget pass/fail summary
   "secretScanBlocked", // CAP-003: set when post-generation secret scanner rejects any test (migration 015)
   "changedPages", "removedPages", // AUTO-002: diff-aware crawl page-change summary (migration 020)
+  "githubCheck", // INT-002: GitHub Check Run metadata (migration 021)
 ];
 
 const INSERT_SQL = `INSERT INTO runs (${INSERT_COLS.join(", ")})
@@ -196,6 +198,27 @@ export function getByProjectId(projectId) {
   return db.prepare(
     "SELECT * FROM runs WHERE projectId = ? AND deletedAt IS NULL ORDER BY startedAt DESC"
   ).all(projectId).map(rowToRun);
+}
+
+
+/**
+ * Find a non-deleted run that already owns a GitHub Check Run for repo + SHA.
+ * Used to make duplicate PR webhooks idempotent instead of creating a second
+ * pending check for the same commit.
+ *
+ * @param {string} projectId
+ * @param {string} repo
+ * @param {string} sha
+ * @returns {Object|undefined}
+ */
+export function findByGithubRepoSha(projectId, repo, sha) {
+  const db = getDatabase();
+  const rows = db.prepare(
+    `SELECT * FROM runs
+     WHERE projectId = ? AND githubCheck IS NOT NULL AND deletedAt IS NULL
+     ORDER BY startedAt DESC LIMIT 50`
+  ).all(projectId).map(rowToRun);
+  return rows.find((run) => run.githubCheck?.repo === repo && run.githubCheck?.sha === sha);
 }
 
 /**

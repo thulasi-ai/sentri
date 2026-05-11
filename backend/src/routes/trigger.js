@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import * as runRepo from "../database/repositories/runRepo.js";
 import * as testRepo from "../database/repositories/testRepo.js";
 import * as webhookTokenRepo from "../database/repositories/webhookTokenRepo.js";
+import * as githubCheckSettingsRepo from "../database/repositories/githubCheckSettingsRepo.js";
 import { generateRunId } from "../utils/idGenerator.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { runWithAbort } from "../utils/runWithAbort.js";
@@ -33,6 +34,8 @@ import { requireTrigger } from "../middleware/authenticate.js";
 import { fireNotifications } from "../utils/notifications.js";
 import { validateUrl, safeFetch } from "../utils/ssrfGuard.js";
 import { orderTestsByRisk, applyBudgetToQueue, normalizeBudgetMinutes } from "../pipeline/riskScorer.js";
+import { createPending, markInProgress, conclude, buildRunUrl } from "../integrations/githubChecks.js";
+import { findGreenBaseRun, renderGithubCheckSummary, conclusionForRun } from "../utils/runResultFormatters.js";
 
 // ─── SSRF protection for callbackUrl ──────────────────────────────────────────
 // Two-layer defence provided by utils/ssrfGuard.js:
@@ -132,7 +135,7 @@ function buildCrawlRun({ runId, project, dialsConfig }) {
  * @param {number} args.parallelWorkers
  * @returns {object} the run record ready for `runRepo.create()`.
  */
-function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, budgetMinutes = null, parallelWorkers }) {
+function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, budgetMinutes = null, parallelWorkers, githubCheck = null }) {
   const lookup = riskById || new Map();
   const initialResults = budgetSkipped.map((t) => ({
     testId: t.id,
@@ -159,7 +162,73 @@ function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, bud
     })),
     budgetMinutes,
     workspaceId: project.workspaceId || null,
+    githubCheck,
   };
+}
+
+
+function normalizeGithubPayload(body = {}) {
+  const repo = typeof body.repo === "string" ? body.repo.trim()
+    : body.repository?.full_name ? String(body.repository.full_name).trim() : "";
+  const sha = typeof body.sha === "string" ? body.sha.trim()
+    : body.check_suite?.head_sha ? String(body.check_suite.head_sha).trim()
+    : body.pull_request?.head?.sha ? String(body.pull_request.head.sha).trim() : "";
+  const baseSha = typeof body.baseSha === "string" ? body.baseSha.trim()
+    : body.pull_request?.base?.sha ? String(body.pull_request.base.sha).trim() : null;
+  const prNumber = Number.isInteger(body.prNumber) ? body.prNumber
+    : Number.isInteger(body.number) ? body.number
+    : Number.isInteger(body.pull_request?.number) ? body.pull_request.number : null;
+  return { repo, sha, baseSha, prNumber };
+}
+
+async function prepareGithubCheck(project, body, runId) {
+  const payload = normalizeGithubPayload(body);
+  if (!payload.repo || !payload.sha) return null;
+  const settings = githubCheckSettingsRepo.getByProjectId(project.id);
+  if (!settings?.enabled) return null;
+  if (settings.repo && settings.repo !== payload.repo) return null;
+  if (!settings.installationId) throw new Error("GitHub installationId is not configured for this project");
+
+  const existing = runRepo.findByGithubRepoSha(project.id, payload.repo, payload.sha);
+  if (existing?.githubCheck?.checkRunId) {
+    return { ...existing.githubCheck, reused: true };
+  }
+
+  const checkRun = await createPending(runId, {
+    repo: payload.repo,
+    sha: payload.sha,
+    installationId: settings.installationId,
+  });
+  await markInProgress(checkRun.id, { repo: payload.repo, installationId: settings.installationId });
+  return {
+    checkRunId: checkRun.id,
+    repo: payload.repo,
+    sha: payload.sha,
+    baseSha: payload.baseSha,
+    prNumber: payload.prNumber,
+    installationId: settings.installationId,
+    status: "in_progress",
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function concludeGithubCheck(finishedRun, project) {
+  const check = finishedRun?.githubCheck;
+  if (!check?.checkRunId || !check.repo || !check.installationId) return;
+  try {
+    const projectRuns = runRepo.getByProjectId(project.id);
+    const baseRun = findGreenBaseRun(projectRuns, check.baseSha, check.repo);
+    const summaryMd = renderGithubCheckSummary(finishedRun, { baseRun, runUrl: buildRunUrl(finishedRun.id) || "" });
+    await conclude(check.checkRunId, {
+      repo: check.repo,
+      installationId: check.installationId,
+      conclusion: conclusionForRun(finishedRun),
+      summaryMd,
+    });
+    runRepo.update(finishedRun.id, { githubCheck: { ...check, status: "completed", conclusion: conclusionForRun(finishedRun), completedAt: new Date().toISOString() } });
+  } catch (err) {
+    console.warn(`[github-checks] Failed to conclude check for run ${finishedRun.id}: ${err.message}`);
+  }
 }
 
 /**
@@ -201,7 +270,7 @@ function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, bud
  * @param {Object}  req - Express request
  * @param {Object} res - Express response
  */
-router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (req, res) => {
+async function handleTrigger(req, res) {
   const { triggerToken: tokenRow, triggerProject: project } = req;
 
   // ── 3. Extract and validate optional config (async) ────────────────
@@ -252,6 +321,16 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
   // other request can interleave and pass the same guard.
   const existingRun = runRepo.findActiveByProjectId(project.id);
   if (existingRun) {
+    const githubPayload = normalizeGithubPayload(req.body || {});
+    if (githubPayload.repo && githubPayload.sha && existingRun.githubCheck?.repo === githubPayload.repo && existingRun.githubCheck?.sha === githubPayload.sha) {
+      const proto = req.headers["x-forwarded-proto"] || req.protocol;
+      const host  = req.headers["x-forwarded-host"]  || req.get("host");
+      return res.status(202).json({
+        runId: existingRun.id,
+        statusUrl: `${proto}://${host}/api/v1/projects/${project.id}/trigger/runs/${existingRun.id}`,
+        githubCheck: { checkRunId: existingRun.githubCheck.checkRunId, reused: true },
+      });
+    }
     return res.status(409).json({
       error: `A run is already in progress (${existingRun.id}).`,
       runId: existingRun.id,
@@ -287,6 +366,19 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
     ? buildCrawlRun({ runId, project, dialsConfig: validatedDials })
     : buildTestRun({ runId, project, tests, budgetSkipped, riskById, budgetMinutes: safeBudget, parallelWorkers });
   runRepo.create(run);
+
+  if (!triggerCrawl) {
+    try {
+      run.githubCheck = await prepareGithubCheck(project, req.body || {}, runId);
+      if (run.githubCheck) runRepo.update(runId, { githubCheck: run.githubCheck });
+    } catch (err) {
+      run.status = "failed";
+      run.error = err.message;
+      run.finishedAt = new Date().toISOString();
+      runRepo.save(run);
+      return res.status(400).json({ error: err.message });
+    }
+  }
 
   // Record that this token was used (updates lastUsedAt)
   webhookTokenRepo.touch(tokenRow.id);
@@ -371,6 +463,7 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
       onComplete: async (finishedRun) => {
         // FEA-001: Fire failure notifications — best-effort
         try { await fireNotifications(finishedRun, project); } catch { /* best-effort */ }
+        await concludeGithubCheck(finishedRun, project);
 
         if (!callbackUrl || typeof callbackUrl !== "string") return;
         const payload = JSON.stringify({
@@ -397,7 +490,9 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
   const statusUrl = `${proto}://${host}/api/v1/projects/${project.id}/trigger/runs/${runId}`;
 
   res.status(202).json({ runId, statusUrl });
-});
+}
+
+router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, handleTrigger);
 
 /**
  * HMAC signature verification for deployment-webhook payloads.
@@ -416,7 +511,7 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
  * interoperability with the provider's signing scheme. When Vercel upgrades
  * their webhook signatures, bump `algo` for the `"vercel"` branch here.
  *
- * @param {"vercel"|"netlify"} provider
+ * @param {"vercel"|"netlify"|"github"} provider
  * @param {Buffer|undefined} rawBody - captured by the webhook-scoped
  *   express.json `verify` callback in `middleware/appSetup.js`.
  * @param {string|undefined} signatureHeader - the provider's signature header
@@ -424,7 +519,11 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
  * @returns {boolean}
  */
 function verifyWebhookSignature(provider, rawBody, signatureHeader) {
-  const secret = provider === "vercel" ? process.env.VERCEL_WEBHOOK_SECRET : process.env.NETLIFY_WEBHOOK_SECRET;
+  const secret = provider === "vercel"
+    ? process.env.VERCEL_WEBHOOK_SECRET
+    : provider === "github"
+    ? process.env.GITHUB_WEBHOOK_SECRET
+    : process.env.NETLIFY_WEBHOOK_SECRET;
   if (!secret || !signatureHeader || !rawBody) return false;
   const algo = provider === "vercel" ? "sha1" : "sha256";
   const expected = crypto.createHmac(algo, secret).update(rawBody).digest("hex");
@@ -551,6 +650,14 @@ async function launchPreviewCrawl({ project, previewUrl, provider, tokenRow, dia
  *      project should run — without this, a single global webhook secret
  *      would let any signed payload trigger any project ID in the URL).
  */
+
+router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, async (req, res) => {
+  const sig = req.get("X-Hub-Signature-256");
+  if (!verifyWebhookSignature("github", req.rawBody, sig)) return res.status(401).json({ error: "invalid signature" });
+  req.body = { ...(req.body || {}), ...normalizeGithubPayload(req.body || {}) };
+  return handleTrigger(req, res);
+});
+
 router.post("/projects/:id/trigger/vercel", expensiveOpLimiter, requireTrigger, async (req, res) => {
   const sig = req.get("X-Vercel-Signature");
   if (!verifyWebhookSignature("vercel", req.rawBody, sig)) return res.status(401).json({ error: "invalid signature" });
