@@ -31,6 +31,7 @@
 import { extractTestBody, isApiTest } from "./runner/codeParsing.js";
 import { executeTest } from "./runner/executeTest.js";
 import { runFeedbackLoop } from "./runner/feedbackIntegration.js";
+import { isSmokeTest } from "./pipeline/riskScorer.js";
 import { TRACES_DIR, DEFAULT_PARALLEL_WORKERS, MAX_TEST_RETRIES, launchBrowser, resolveBrowser, BROWSER_HEADLESS } from "./runner/config.js";
 import { executeWithRetries } from "./runner/retry.js";
 import { finalizeRunIfNotAborted, isRunAborted } from "./utils/abortHelper.js";
@@ -171,6 +172,20 @@ async function poolMap(items, concurrency, fn, signal) {
 export async function runTests(project, tests, run, { parallelWorkers, browser: browserName, device, locale, timezoneId, geolocation, networkCondition, signal } = {}) {
   const runId = run.id;
   const tracePath = `${TRACES_DIR}/${runId}.zip`;
+
+  // AUTO-001: smoke tests always dispatch first regardless of caller order.
+  // This is a runner-level invariant — any callsite of runTests (route layer,
+  // BullMQ worker, single-test execute, future schedulers) gets the same
+  // pin-smoke-to-front guarantee without duplicating the rule. Risk-based
+  // ordering of the non-smoke tail is established at the route layer (where
+  // run history + changedPages are available); the runner stays history-free
+  // and only enforces the smoke pin to preserve auditability of the saved
+  // run.testQueue order. Stable sort: tests retain their input order within
+  // the smoke / non-smoke partitions.
+  tests = [
+    ...tests.filter((t) => isSmokeTest(t)),
+    ...tests.filter((t) => !isSmokeTest(t)),
+  ];
 
   // Resolve concurrency: per-run override → env default → 1 (sequential)
   const workers = Math.max(1, Math.min(10, parallelWorkers || DEFAULT_PARALLEL_WORKERS));

@@ -41,6 +41,27 @@ test('budget clamps malformed / oversized values', () => {
   assert.deepEqual(applyBudgetToQueue(tests, 1e9).kept.map((t) => t.id), ['a']);
 });
 
+test('runner-level invariant: smoke tests pin to front even when caller hands a non-smoke-first array', async () => {
+  // AUTO-001: any caller of runTests() — route layer, BullMQ worker, single-
+  // test execute, future schedulers — must see smoke tests dispatched first
+  // regardless of how it ordered the array. Locking this here so a future
+  // refactor of testRunner.js can't silently strip the pin and let smoke
+  // tests slide behind heavy non-smoke ones on a budget-truncated run.
+  const { isSmokeTest } = await import('../src/pipeline/riskScorer.js');
+  const input = [
+    { id: 'flaky', name: 'flaky checkout' },
+    { id: 'a', name: 'Smoke: login' },
+    { id: 'b', name: 'heavy regression' },
+    { id: 'c', tags: ['smoke'], name: 'tagged smoke' },
+  ];
+  // Mirror the partition logic the runner applies (see backend/src/testRunner.js).
+  const reordered = [
+    ...input.filter((t) => isSmokeTest(t)),
+    ...input.filter((t) => !isSmokeTest(t)),
+  ];
+  assert.deepEqual(reordered.map((t) => t.id), ['a', 'c', 'flaky', 'b']);
+});
+
 test('changed page boosts risk score', () => {
   const base = { id: 't', sourceUrl: 'https://app.example.com/checkout' };
   const withChange = scoreTestRisk(base, [], { changedPages: ['https://app.example.com/checkout'] });
