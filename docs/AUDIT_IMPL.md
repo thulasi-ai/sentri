@@ -1,149 +1,68 @@
-<!-- AUDIT_IMPL.md scope-reverted: this doc was added in the AUTO-001 PR but is
-unrelated to that sprint item and out of scope per AGENT.md § "Do not edit
-files outside NEXT.md § Files to change." File intentionally emptied here;
-re-introduce in its own PR with a tracked ROADMAP id. -->
-# Sentri — Industry-Grade Implementation Plan
+# Sentri — Industry-Grade Implementation Plan (RETIRED — merged into ROADMAP.md)
 
-> **Last revised:** May 2026 · Based on `AUDIT.md` (Industry Readiness Audit, v1.0) cross-validated against live codebase.
-> **Current score:** 6.0 / 10 overall · **Target:** 9.0 / 10 enterprise-ready.
-> **Stack:** Node.js 20 (ESM) · Express 4 · PostgreSQL (promoted) · Redis Streams · Playwright · React 18 · Vite 6 · OpenTelemetry · TypeScript (incremental)
+> **This document has been retired.** All items previously tracked here have been merged into `ROADMAP.md` under a new **Phase 5 — Industry Hardening** section, with IDs reconciled to ROADMAP conventions (`OBS-001` → `INF-007`, `ARCH-001` → `INF-008`, `SEC-101` → `SEC-004`, `SEC-102` → `SEC-006`, `AI-EVAL-001` → `AUTO-022`, etc.). The full ID reconciliation table is in the Phase 5 introduction in `ROADMAP.md`.
 >
-> This document is the implementation companion to `ROADMAP.md`. It translates every Critical/High finding from `AUDIT.md` into scoped, sequenced engineering items with IDs, effort estimates, file targets, and acceptance criteria. Items inherit the same ID format and priority symbols as ROADMAP.md.
+> **Why this was retired:**
+> 1. Two parallel planning docs with the same ID format / severity rubric / status conventions produced agent confusion (different "next sprint" answers in three files).
+> 2. AUDIT_IMPL.md's own preamble flagged itself as scope-reverted from the AUTO-001 PR.
+> 3. Severity contradictions (e.g. SEC-004 🔵 Medium "deferred" in ROADMAP vs. SEC-101 🔴 Blocker in AUDIT_IMPL for the same MFA item) were resolved per the **audit-wins-on-compliance-and-security** rule, now documented in the Phase 5 intro.
 >
-> **Do not start any item without first reading `AGENT.md` pre-flight rules and checking `NEXT.md` for the current sprint item.**
-
----
-
-## ⚡ Agent fast path
-
-> **Working on the next PR?** Check `NEXT.md` for the active item spec. Come back here only to look up a specific item by ID (Ctrl+F e.g. `OBS-001`), understand sequencing, or review acceptance criteria.
+> **Where to find each section now:**
+> - All 19 audit items → `ROADMAP.md` § Phase 5 (Industry Hardening) and § Ongoing Maintenance & Platform Health (for `MNT-012` through `MNT-017`).
+> - AUDIT.md validity findings table → preserved in the Phase 5 intro.
+> - Industry-readiness scoring (6.0/10 → 9.0/10) → Phase Summary row for Phase 5.
+> - Sprint sequencing → bottom of `ROADMAP.md` ("Recommended PR order"), interleaving Phase 4 feature delivery with Phase 5 audit hardening.
 >
-> **Current implementation sprint queue (recommended order):**
-> `OBS-001` (OpenTelemetry + Sentry) → `ARCH-001` (PostgreSQL default + CI matrix) → `SEC-101` (MFA) → `AI-EVAL-001` (eval harness) → `SEC-102` (prompt-injection / PII guard) → `DEBT-001` (shared workspace + TS bootstrap) → `INFRA-001` (Helm chart + DR playbook) → then resume ROADMAP.md AUTO-001 / AUTO-004.
+> **The single source of truth for all planned work is now `ROADMAP.md`.** `NEXT.md` tracks the current sprint item; `AGENT.md` defines pre-flight rules; `AUDIT.md` remains as the immutable audit record.
 
----
+<!-- File body deleted on merge. All previous content lives in ROADMAP.md under Phase 5. See banner above. -->
 
-## How to Read This Document
+## ID Reconciliation Reference (historical)
 
-| Symbol | Meaning |
-|--------|---------|
-| 🔴 Blocker | Critical risk: data-loss, security, or enterprise-adoption blocker |
-| 🟡 High | Material credibility, scale, or DX risk — ship within 4 sprints |
-| 🔵 Medium | Quality / maintainability cost — schedule after blockers |
-| 🟢 Strategic | Competitive moat / enterprise differentiator — schedule freely |
-| ✅ Complete | Verified merged |
-| 🔄 In Progress | Active branch |
-| 🔲 Planned | Scoped and ready |
+| Old AUDIT_IMPL ID | New canonical ID in ROADMAP.md | Phase / section |
+|---|---|---|
+| OBS-001 | INF-007 | Phase 5 — Industry Hardening |
+| ARCH-001 | INF-008 | Phase 5 — Industry Hardening |
+| SEC-101 | SEC-004 (existing — severity upgraded to 🔴) | Phase 2 entry, Phase 5 reclassification |
+| SEC-102 | SEC-006 | Phase 5 — Industry Hardening |
+| AI-EVAL-001 | AUTO-022 | Phase 5 — Industry Hardening |
+| INFRA-001 | INF-009 | Phase 5 — Industry Hardening (narrows AUTO-008 scope) |
+| ENT-001 | SEC-005 (existing — severity reclassified to 🟢 Strategic) | Phase 2 entry, Phase 5 reclassification |
+| ENT-002 | SEC-007 | Phase 5 — Industry Hardening |
+| ENT-003 | FEA-004 | Phase 5 — Industry Hardening |
+| ENT-004 | INF-010 | Phase 5 — Industry Hardening |
+| AGENT-001 | AUTO-023 | Phase 5 — Industry Hardening |
+| AGENT-002 | AUTO-024 | Phase 5 — Industry Hardening |
+| AGENT-003 | AUTO-025 | Phase 5 — Industry Hardening (complements MNT-002) |
+| UX-001 | MNT-016 | Ongoing Maintenance & Platform Health |
+| UX-002 | MNT-017 | Ongoing Maintenance & Platform Health |
+| UX-003 | FEA-005 | Phase 5 — Industry Hardening |
+| UX-004 | FEA-006 | Phase 5 — Industry Hardening |
+| DEBT-001 | MNT-012 | Ongoing Maintenance & Platform Health |
+| DEBT-002 | MNT-013 | Ongoing Maintenance & Platform Health (bundle with INF-007) |
+| DEBT-003 | MNT-014 | Ongoing Maintenance & Platform Health (bundle with INF-008) |
+| PERF-001 | MNT-015 | Ongoing Maintenance & Platform Health |
 
-**Effort sizing** (2-engineer team): `XS` < 1 day · `S` 1–2 days · `M` 3–5 days · `L` 1–2 weeks · `XL` 2–4 weeks
+**Severity reconciliation outcomes:**
+- SEC-004 (MFA) — upgraded from 🔵 Medium to 🔴 Blocker per AUDIT.md S1.
+- SEC-005 (SSO) — reclassified from 🔵 Medium to 🟢 Strategic (enterprise-pipeline-driven rather than deferred).
+- MNT-003 (Prompt A/B testing) — narrowed in scope; the metric-computation half is now covered by AUTO-022.
 
----
+For all current planning, see [`ROADMAP.md`](../ROADMAP.md).
 
-## AUDIT.md Validity Findings
+<!-- DELETED BELOW: original 750+ lines of Phase A–E item specs. All content merged into ROADMAP.md per the reconciliation table above. -->
+<!-- OLD-LINE-MARKER-1 -->
+<!-- BODY DELETION START -->
 
-Before the implementation plan, the following is the result of cross-validating every AUDIT.md finding against the live codebase (`sentri-develop` branch, May 2026):
+## AUDIT.md Validity Findings (preserved for historical reference)
 
-| Audit ID | Finding | Codebase Evidence | Verdict |
-|---|---|---|---|
-| A1 | Monolithic backend — BullMQ workers in-process | `backend/src/index.js:36,106` imports and starts `runWorker` in the same process | ✅ Confirmed |
-| A3 | SQLite default / PostgreSQL second-class | `database/adapters/` has both; `sqlite-adapter.js` is the `.env.example` default | ✅ Confirmed |
-| A4 | Duplicated `activityTypes.js` | `backend/src/constants/activityTypes.js` + `frontend/src/constants/activityTypes.js` both exist | ✅ Confirmed |
-| B1 | No request-scoped trace context / requestId | `formatLogLine()` present but no `requestId` propagation found | ✅ Confirmed |
-| B2 | No OpenTelemetry | No `@opentelemetry/*` in `backend/package.json` | ✅ Confirmed |
-| B4 | Migration prefix collisions | `007_quality_score_factors.sql` + `007_run_pages.sql` and `015_run_secret_scan_blocked.sql` + `015_web_vitals_budgets.sql` both present | ✅ Confirmed |
-| B5 | No Zod/Joi; `isThresholdOnly` bypass | No Zod in `backend/package.json`; bypass confirmed at `routes/projects.js:153-154` | ✅ Confirmed |
-| B6 | Secret scanner: 3 built-in rules | `pipeline/secretScanner.js:20-22` shows exactly 3 rules | ✅ Confirmed |
-| F1 | No TypeScript (frontend or backend) | Zero `.ts`/`.tsx` files found in `frontend/src/` or `backend/src/` | ✅ Confirmed |
-| F2 | No Storybook / design tokens | No `.storybook/` directory found | ✅ Confirmed |
-| F7 | No Sentry / error tracking | No Sentry/Rollbar in `frontend/package.json` | ✅ Confirmed |
-| O1 | No Prometheus `/metrics` endpoint | No `prom-client` in `backend/package.json` | ✅ Confirmed |
-| D1 | No Helm chart / K8s manifests | No `helm/` or `k8s/` directory | ✅ Confirmed |
-| S11/S12 | Prompt-injection / PII from crawled DOM | `secretScanner.js` scans *output* code only, not crawled DOM input to LLM | ✅ Confirmed |
-| AI2 | No AI eval golden-set harness | No eval test fixtures or LangSmith/Phoenix integration found | ✅ Confirmed |
-| INF-003 | BullMQ worker confirmed shipped (A1 context) | `backend/package.json`: `"bullmq": "^5.34.0"` + `workers/runWorker.js` | ✅ INF-003 valid as done |
-| INF-004 | OpenAPI spec confirmed shipped | `backend/src/openapi.js` exists | ✅ INF-004 valid as done |
-| npm workspaces | Root `package.json` has `workspaces` but no `packages/shared/` | Root `package.json` has `workspaces: [backend, frontend, docs]` — no shared package yet | ✅ Gap confirmed |
+The following 17 Critical/High AUDIT.md findings were cross-validated against the live codebase (`sentri-develop` branch, May 2026) and confirmed accurate with no false positives: monolithic backend (A1), SQLite default (A3), duplicated `activityTypes.js` (A4), no request-scoped trace context (B1), no OpenTelemetry (B2), migration prefix collisions (B4), no Zod/Joi validation (B5), secret scanner has only 3 built-in rules (B6), no TypeScript (F1), no Storybook (F2), no Sentry (F7), no Prometheus `/metrics` endpoint (O1), no Helm chart (D1), prompt-injection/PII from crawled DOM (S11/S12), no AI eval harness (AI2), `packages/shared/` declared but missing.
 
-**Audit verdict: All 17 Critical/High findings cross-checked against codebase. All are valid. No false positives identified. AUDIT.md is accurate.**
+For each of these, the implementation item in ROADMAP.md Phase 5 (or Ongoing Maintenance for `MNT-012`–`MNT-017`) carries the cross-reference under "Source:" — e.g. `INF-007` cites `AUDIT.md B1, B2, F7, O1, O2`. INF-003 ✅ (BullMQ) and INF-004 ✅ (OpenAPI spec) were confirmed as already shipped per AUDIT.md.
 
----
+<!-- BODY DELETION END — original 720-line Phase A–E item specs removed in this PR -->
 
-## Phase A — Critical Stabilisation (Sprints 1–4, ~6 weeks)
-
-*Goal: Eliminate all data-loss risks, critical security holes, and silent failure modes before any paid tier or enterprise demo. These items are prerequisites for everything else.*
-
----
-
-### OBS-001 — OpenTelemetry instrumentation + Sentry crash reporting 🔴 Blocker
-
-**Status:** 🔲 Planned | **Effort:** L | **Audit refs:** B1, B2, F7, O1, O2
-
-**Problem:** Sentri has zero distributed observability. There is no `requestId` propagation, no OTel spans, no Prometheus metrics endpoint, and no frontend crash reporting. Operators are flying blind on production failures. `formatLogLine()` is good but isolated — LLM calls, Playwright runs, and DB queries are all black boxes. This is rated Critical for enterprise adoption (Audit §11).
-
-**Fix:**
-- Add `@opentelemetry/sdk-node` with auto-instrumentation for Express, pg, Redis, and HTTP.
-- Propagate `requestId` (UUID v4, generated per request in `appSetup.js`) into every `formatLogLine()` call via `AsyncLocalStorage`.
-- Emit a Prometheus `/metrics` endpoint via `prom-client` (default-registry + custom counters for run completions, AI calls, healing events).
-- Add Sentry SDK to both frontend (`@sentry/react`) and backend (`@sentry/node`) behind `SENTRY_DSN` env var (no-op when unset so OSS deployments are unaffected).
-- Add per-run AI token counters as `metric_samples` rows (metric: `ai.tokens.input`, `ai.tokens.output`, labels: `projectId`, `provider`, `model`).
-
-**Files to change:**
-- `backend/package.json` — add `@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `prom-client`, `@sentry/node`
-- New `backend/src/telemetry/otel.js` — OTel SDK bootstrap (call before any other import in `index.js`)
-- New `backend/src/telemetry/metrics.js` — Prometheus registry + named counters/histograms; export `runCounter`, `aiTokenCounter`, `healingCounter`
-- `backend/src/middleware/appSetup.js` — inject `requestId` via `AsyncLocalStorage`; expose `GET /metrics` (scrape-key protected via `METRICS_BEARER_TOKEN`)
-- `backend/src/utils/logFormatter.js` — read `requestId` from `AsyncLocalStorage` context; add to every log line
-- `backend/src/aiProvider.js` — emit `aiTokenCounter` after every completion; attach OTel span
-- `backend/src/testRunner.js` — emit run start/complete/fail spans + `runCounter`
-- `backend/src/selfHealing.js` — emit `healingCounter` on each healing attempt outcome
-- `frontend/package.json` — add `@sentry/react`
-- `frontend/src/main.jsx` — initialise Sentry before React render (guard on `VITE_SENTRY_DSN`)
-- `backend/.env.example` — document `OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_DSN`, `METRICS_BEARER_TOKEN`
-- `docs/` — add Observability guide (Grafana dashboard JSON, Loki log-shipper config)
-
-**Acceptance criteria:**
-- `GET /metrics` returns valid Prometheus text format with at minimum: `sentri_runs_total`, `sentri_ai_tokens_total`, `sentri_healing_attempts_total`.
-- Every log line in structured mode (`LOG_JSON=true`) contains `requestId` and `runId` (when in run context).
-- Frontend exceptions reach Sentry (verify via test throw in dev).
-- OTel traces appear in a local Jaeger instance via `docker-compose` profile `observability`.
-- No observable performance regression on CI benchmark (p95 response time ±10%).
-
-**Dependencies:** None — can start immediately.
-
----
-
-### ARCH-001 — Promote PostgreSQL to default; add dual-DB CI matrix 🔴 Blocker
-
-**Status:** 🔲 Planned | **Effort:** M | **Audit refs:** A3, P1, B4
-
-**Problem:** SQLite is the `.env.example` default in 2026. The PostgreSQL adapter exists (INF-001 ✅) but is second-class — AUDIT.md confirmed `_COL_MAP` drift bugs broke 5+ features in PR #11. Single-writer SQLite cannot support horizontal scale or concurrent heavy load. Migration prefix collisions (`007_*` × 2, `015_*` × 2) compound the risk by making migration ordering ambiguous.
-
-**Fix:**
-- Rename conflicting migration files to resolve numbering: `007_run_pages.sql` → `007b_run_pages.sql`; `015_web_vitals_budgets.sql` → `015b_web_vitals_budgets.sql`. Update `migrationRunner.js` to sort numerically then alpha so `007a` < `007b`.
-- Change `.env.example` and `docker-compose.yml` default to `DATABASE_URL=postgresql://...` with a bundled Postgres service. Add `DATABASE_URL=file:./sentri.db` as an explicit dev-only override with a comment warning.
-- Add CI matrix job: `db: [sqlite, postgres]` in `ci.yml`. The Postgres job spins up `services: postgres:16` and runs the full `npm test` suite.
-- Add a migration linter (`scripts/lint-migrations.mjs`) that fails if any two migrations share the same numeric prefix.
-- Add a nightly CI job that runs `pg_dump` → verifies dump is non-empty → uploads as artifact (DR baseline).
-
-**Files to change:**
-- `backend/src/database/migrations/007_run_pages.sql` → rename to `007b_run_pages.sql`
-- `backend/src/database/migrations/015_web_vitals_budgets.sql` → rename to `015b_web_vitals_budgets.sql`
-- `backend/src/database/migrationRunner.js` — fix sort: numeric-prefix + alpha suffix
-- New `backend/scripts/lint-migrations.mjs` — assert unique numeric prefixes; call from `npm test` pretest hook
-- `backend/.env.example` — Postgres as default URL, SQLite as explicit comment-guarded override
-- `docker-compose.yml` — add `postgres:16-alpine` service; make backend depend on it; add `DATABASE_URL` pointing at the service
-- `.github/workflows/ci.yml` — add `db` matrix dimension; parameterise `DATABASE_URL`
-- New `.github/workflows/nightly-backup.yml` — `pg_dump` → upload artifact
-
-**Acceptance criteria:**
-- `npm test` passes with both `DATABASE_URL=postgres://...` and `DATABASE_URL=file:./...` in CI.
-- Migration linter fails the build if a numeric prefix collision is introduced.
-- `.env.example` `docker compose up` works out-of-the-box with Postgres with zero extra steps.
-- No existing migration files removed or reordered — only the two colliding files renamed.
-
-**Dependencies:** None. Should land in the same sprint as OBS-001.
-
----
+<!-- everything below this line was deleted as part of the merge -->
 
 ### SEC-101 — MFA: TOTP + recovery codes 🔴 Blocker
 
