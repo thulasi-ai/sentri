@@ -36,6 +36,16 @@ export function isSmokeTest(test) {
   return String(test?.name || "").toLowerCase().includes("smoke");
 }
 
+/**
+ * `runHistory` contract: rows are ordered **newest-first**. Both callers
+ * (`routes/runs.js` + `routes/trigger.js`) build history by flat-mapping the
+ * results of runs returned by `runRepo.getRecentCompletedWithResults()`,
+ * which queries `ORDER BY startedAt DESC` — so position 0 is the most recent
+ * execution. The scorer takes the first 10 entries as the "recent" window
+ * and reads index 0 for the most-recent-failure bonus. Reversing the array
+ * at the callers (or sorting inside the scorer) would work too but costs an
+ * O(n) per test; honouring the source order here is free.
+ */
 export function scoreTestRisk(test, runHistory = [], { now = Date.now(), changedPages = [] } = {}) {
   let score = 0;
   // Exclude budget-skipped rows from the history: they reflect a dispatch
@@ -45,11 +55,15 @@ export function scoreTestRisk(test, runHistory = [], { now = Date.now(), changed
   const rows = runHistory.filter(
     (r) => r?.testId === test.id && !(r.status === "skipped" && r.skipReason === "over_budget"),
   );
-  const recent = rows.slice(-10);
+  // Newest-first window: take the head, not the tail. The previous
+  // `slice(-10)` + `at(-1)` shape silently inverted the bonus — a test that
+  // had just been fixed still scored the +20 most-recent-failure boost
+  // because the *oldest* row in the window was the failure.
+  const recent = rows.slice(0, 10);
   const failed = recent.filter((r) => r.status !== "passed").length;
   const passRate = recent.length ? (recent.length - failed) / recent.length : 1;
   score += (1 - passRate) * 60;
-  if (recent.at(-1)?.status && recent.at(-1).status !== "passed") score += 20;
+  if (recent[0]?.status && recent[0].status !== "passed") score += 20;
 
   const updatedAt = toTs(test?.updatedAt);
   if (updatedAt) {

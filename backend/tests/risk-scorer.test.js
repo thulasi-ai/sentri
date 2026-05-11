@@ -83,6 +83,27 @@ test('runner-level invariant: smoke tests pin to front even when caller hands a 
   assert.deepEqual(reordered.map((t) => t.id), ['a', 'c', 'flaky', 'b']);
 });
 
+test('runHistory is interpreted newest-first (matches getRecentCompletedWithResults DESC order)', () => {
+  // Regression guard: scoreTestRisk previously used slice(-10) / at(-1) which
+  // assumed oldest-first ordering, but both route callers build history via
+  // runRepo.getRecentCompletedWithResults() which queries
+  // `ORDER BY startedAt DESC`. The "+20 most-recent-failure" bonus was
+  // therefore inverted — recently-fixed tests kept getting the boost, and
+  // tests that just started failing did not. Locking the contract here.
+  const subject = { id: 't', updatedAt: '1970-01-01T00:00:00Z' }; // disable recency term
+  // Newest-first: position 0 is the most recent execution.
+  const justFailed = [{ testId: 't', status: 'failed' }, { testId: 't', status: 'passed' }];
+  const justFixed  = [{ testId: 't', status: 'passed' }, { testId: 't', status: 'failed' }];
+  const justFailedScore = scoreTestRisk(subject, justFailed);
+  const justFixedScore  = scoreTestRisk(subject, justFixed);
+  // A test whose most-recent run failed must outrank a test whose most-recent
+  // run passed, even when both have identical pass rates over the window.
+  assert.ok(
+    justFailedScore > justFixedScore,
+    `expected just-failed (${justFailedScore}) > just-fixed (${justFixedScore})`,
+  );
+});
+
 test('changed page boosts risk score', () => {
   const base = { id: 't', sourceUrl: 'https://app.example.com/checkout' };
   const withChange = scoreTestRisk(base, [], { changedPages: ['https://app.example.com/checkout'] });
