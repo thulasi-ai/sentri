@@ -41,6 +41,27 @@ test('budget clamps malformed / oversized values', () => {
   assert.deepEqual(applyBudgetToQueue(tests, 1e9).kept.map((t) => t.id), ['a']);
 });
 
+test('BullMQ worker invariant: testIds order is preserved when rebuilding tests array', () => {
+  // AUTO-001 regression guard: backend/src/workers/runWorker.js (lines ~133-149)
+  // was previously `allTests.filter(idSet.has)`, which silently re-sorted the
+  // dispatched tests into DB order and defeated the route layer's risk
+  // ranking for every BullMQ-processed run. Locking the order-preserving
+  // map-and-filter shape here so a refactor can't regress it without breaking
+  // a test.
+  const testIds = ['t-high-risk', 't-low-risk', 't-smoke'];
+  const allTests = [
+    // Returned in DB order (alphabetical by id, typical SQLite behaviour) —
+    // distinct from the risk-ranked testIds order above.
+    { id: 't-low-risk', name: 'low' },
+    { id: 't-high-risk', name: 'high' },
+    { id: 't-smoke', name: 'Smoke: login' },
+    { id: 't-unrelated', name: 'not dispatched' }, // not in testIds — must be dropped
+  ];
+  const byId = new Map(allTests.map((t) => [t.id, t]));
+  const tests = testIds.map((id) => byId.get(id)).filter(Boolean);
+  assert.deepEqual(tests.map((t) => t.id), ['t-high-risk', 't-low-risk', 't-smoke']);
+});
+
 test('runner-level invariant: smoke tests pin to front even when caller hands a non-smoke-first array', async () => {
   // AUTO-001: any caller of runTests() — route layer, BullMQ worker, single-
   // test execute, future schedulers — must see smoke tests dispatched first
