@@ -171,14 +171,29 @@ function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, bud
 function normalizeGithubPayload(body = {}) {
   const repo = typeof body.repo === "string" ? body.repo.trim()
     : body.repository?.full_name ? String(body.repository.full_name).trim() : "";
+  // INT-002: extract `head_sha` from any of the four canonical payload shapes:
+  //   - `pull_request.head.sha`   → `pull_request.{opened,synchronize,…}` events
+  //   - `check_suite.head_sha`    → `check_suite.{requested,rerequested}` events
+  //   - `check_run.head_sha`      → `check_run.rerequested` (user clicks "Re-run this check"
+  //                                  on a single check, distinct from re-running the whole suite)
+  //   - body-level `sha` override → non-GitHub CI callers (Jenkins / GitLab / generic)
   const sha = typeof body.sha === "string" ? body.sha.trim()
+    : body.check_run?.head_sha ? String(body.check_run.head_sha).trim()
     : body.check_suite?.head_sha ? String(body.check_suite.head_sha).trim()
     : body.pull_request?.head?.sha ? String(body.pull_request.head.sha).trim() : "";
+  // Base SHA is only available on `pull_request` events — `check_run` /
+  // `check_suite` payloads don't carry the merge-base, so the regressed-test
+  // diff falls back to "all failing" on those events (correct behaviour:
+  // a re-run request doesn't change the base, so the original PR delivery
+  // already established the green-base reference in `findGreenBaseRun`).
   const baseSha = typeof body.baseSha === "string" ? body.baseSha.trim()
     : body.pull_request?.base?.sha ? String(body.pull_request.base.sha).trim() : null;
+  // `check_run.pull_requests[0].number` carries the PR number on check-run
+  // rerequest events when the check belongs to a PR (vs. a branch push).
   const prNumber = Number.isInteger(body.prNumber) ? body.prNumber
     : Number.isInteger(body.number) ? body.number
-    : Number.isInteger(body.pull_request?.number) ? body.pull_request.number : null;
+    : Number.isInteger(body.pull_request?.number) ? body.pull_request.number
+    : Number.isInteger(body.check_run?.pull_requests?.[0]?.number) ? body.check_run.pull_requests[0].number : null;
   return { repo, sha, baseSha, prNumber };
 }
 
@@ -733,6 +748,12 @@ async function launchPreviewCrawl({ project, previewUrl, provider, tokenRow, dia
 const TRIGGERING_GITHUB_EVENTS = new Map([
   ["pull_request", new Set(["opened", "synchronize", "reopened", "ready_for_review"])],
   ["check_suite", new Set(["requested", "rerequested"])],
+  // `check_run.rerequested` fires when a user clicks "Re-run this check" on a
+  // single check (distinct from `check_suite.rerequested` which re-runs every
+  // check in the suite). Industry-standard QA gates honour both — without this
+  // entry, the per-check "Re-run" button silently no-ops, which is surprising
+  // UX for anyone used to GitHub Actions / CircleCI behaviour.
+  ["check_run", new Set(["rerequested"])],
 ]);
 
 router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, async (req, res) => {
