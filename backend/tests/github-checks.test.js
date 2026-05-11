@@ -12,6 +12,8 @@ import {
   createPending,
   conclude,
 } from '../src/integrations/githubChecks.js';
+import * as runRepo from '../src/database/repositories/runRepo.js';
+import { resetDb } from './helpers/test-base.js';
 
 const { privateKey: TEST_PRIVATE_KEY } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_KEY = TEST_PRIVATE_KEY.export({ type: 'pkcs1', format: 'pem' });
@@ -135,6 +137,42 @@ test('transient 5xx is retried and the call succeeds when GitHub recovers', asyn
   assert.equal(result.id, 42);
   assert.equal(tokenCalls, 2);
   assert.equal(createCalls, 1);
+});
+
+test('findByGithubRepoSha returns the existing run so webhook retries are idempotent', () => {
+  resetDb();
+  // INT-002 anti-pattern guard: duplicate webhook deliveries for the same
+  // { repo, sha } must reuse the existing checkRunId — otherwise GitHub
+  // accumulates orphan `in_progress` checks on the PR. The lookup uses
+  // SQLite json_extract so it stays correct beyond the 50-run window the
+  // earlier in-process scan was capped at.
+  const projectId = 'PRJ-IDEM';
+  runRepo.create({
+    id: 'RUN-IDEM-OLD',
+    projectId,
+    type: 'test_run',
+    status: 'completed',
+    startedAt: new Date(Date.now() - 60_000).toISOString(),
+    githubCheck: { checkRunId: 111, repo: 'acme/app', sha: 'other-sha', installationId: '99' },
+    results: [],
+  });
+  runRepo.create({
+    id: 'RUN-IDEM-MATCH',
+    projectId,
+    type: 'test_run',
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    githubCheck: { checkRunId: 222, repo: 'acme/app', sha: 'abc', installationId: '99' },
+    results: [],
+  });
+  const match = runRepo.findByGithubRepoSha(projectId, 'acme/app', 'abc');
+  assert.ok(match, 'expected to find a matching run');
+  assert.equal(match.id, 'RUN-IDEM-MATCH');
+  assert.equal(match.githubCheck.checkRunId, 222);
+  // Misses must return undefined (different sha, different repo, different project).
+  assert.equal(runRepo.findByGithubRepoSha(projectId, 'acme/app', 'unknown'), undefined);
+  assert.equal(runRepo.findByGithubRepoSha(projectId, 'other/app', 'abc'), undefined);
+  assert.equal(runRepo.findByGithubRepoSha('PRJ-OTHER', 'acme/app', 'abc'), undefined);
 });
 
 test('Retry-After header is honoured when GitHub returns 429', async () => {
