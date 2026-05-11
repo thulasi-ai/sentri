@@ -261,7 +261,7 @@ router.post("/projects/:id/run", requireRole("qa_lead"), demoQuota("run"), expen
     );
   }
 
-  trackTelemetry("run.started", { projectId: project.id, tests: tests.length, browser: canonicalBrowser, networkCondition: networkCondition || "fast", url: project.url });
+  trackTelemetry("run.started", { projectId: project.id, tests: selectedTests.length, browser: canonicalBrowser, networkCondition: networkCondition || "fast", url: project.url });
   res.json({ runId });
 });
 

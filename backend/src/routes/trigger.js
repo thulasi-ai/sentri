@@ -114,17 +114,33 @@ function buildCrawlRun({ runId, project, dialsConfig }) {
 }
 
 /**
- * Build a `type: "test_run"` run object aligned with `routes/runs.js:161-179`.
+ * Build a `type: "test_run"` run object aligned with `routes/runs.js:188-213`.
+ *
+ * AUTO-001: persisted `testQueue` mirrors the approved-test order (audit
+ * fidelity) with per-row `riskScore`; budget-skipped tests are pre-seeded
+ * into `results` as `skipped (over_budget)` so every approved test has an
+ * observable resolution. `total` reflects the approved set, not the
+ * post-budget dispatch slice.
  *
  * @param {object} args
  * @param {string} args.runId
  * @param {object} args.project - must carry `id` and (optionally) `workspaceId`.
- * @param {object[]} args.tests - The approved tests this run will execute.
- *   Each entry must carry `id`, `name`, and optionally `steps` (defaults to []).
+ * @param {object[]} args.tests - The full approved-test set (persisted order).
+ * @param {object[]} [args.budgetSkipped] - Tests truncated by `budgetMinutes`.
+ * @param {Map<string, number>} [args.riskById] - testId → riskScore lookup.
+ * @param {number|null} [args.budgetMinutes] - Normalized budget actually applied.
  * @param {number} args.parallelWorkers
  * @returns {object} the run record ready for `runRepo.create()`.
  */
-function buildTestRun({ runId, project, tests, parallelWorkers }) {
+function buildTestRun({ runId, project, tests, budgetSkipped = [], riskById, budgetMinutes = null, parallelWorkers }) {
+  const lookup = riskById || new Map();
+  const initialResults = budgetSkipped.map((t) => ({
+    testId: t.id,
+    testName: t.name,
+    status: "skipped",
+    skipReason: "over_budget",
+    riskScore: t.riskScore,
+  }));
   return {
     id: runId,
     projectId: project.id,
@@ -132,12 +148,16 @@ function buildTestRun({ runId, project, tests, parallelWorkers }) {
     status: "running",
     startedAt: new Date().toISOString(),
     logs: [],
-    results: [],
+    results: initialResults,
     passed: 0,
     failed: 0,
     total: tests.length,
     parallelWorkers,
-    testQueue: tests.map((t) => ({ id: t.id, name: t.name, steps: t.steps || [] })),
+    testQueue: tests.map((t) => ({
+      id: t.id, name: t.name, steps: t.steps || [],
+      riskScore: lookup.get(t.id) ?? null,
+    })),
+    budgetMinutes,
     workspaceId: project.workspaceId || null,
   };
 }
@@ -251,7 +271,8 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
   const changedPages = (latestCrawl?.changedPages || []).map((p) => p?.url || p).filter(Boolean);
   const safeBudget = normalizeBudgetMinutes(budgetMinutes);
   const riskOrderedTests = orderTestsByRisk(tests, history, { changedPages });
-  const { kept: selectedTests } = applyBudgetToQueue(riskOrderedTests, safeBudget);
+  const { kept: selectedTests, skipped: budgetSkipped } = applyBudgetToQueue(riskOrderedTests, safeBudget);
+  const riskById = new Map(riskOrderedTests.map((t) => [t.id, t.riskScore]));
   if (!triggerCrawl) {
     if (!allTests.length) return res.status(400).json({ error: "No tests found — crawl first." });
     if (!tests.length) return res.status(400).json({ error: "No approved tests — review generated tests before triggering." });
@@ -264,7 +285,7 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
   const runId = generateRunId();
   const run = triggerCrawl
     ? buildCrawlRun({ runId, project, dialsConfig: validatedDials })
-    : buildTestRun({ runId, project, tests, parallelWorkers });
+    : buildTestRun({ runId, project, tests, budgetSkipped, riskById, budgetMinutes: safeBudget, parallelWorkers });
   runRepo.create(run);
 
   // Record that this token was used (updates lastUsedAt)
@@ -282,7 +303,7 @@ router.post("/projects/:id/trigger", expensiveOpLimiter, requireTrigger, async (
     workspaceId: project.workspaceId,
     detail: triggerCrawl
       ? `CI/CD triggered crawl${previewUrl ? ` — ${previewUrl}` : ""}`
-      : `CI/CD triggered test run — ${tests.length} test${tests.length !== 1 ? "s" : ""}${parallelWorkers > 1 ? ` (${parallelWorkers}x parallel)` : ""}`,
+      : `CI/CD triggered test run — ${selectedTests.length} of ${tests.length} test${tests.length !== 1 ? "s" : ""}${budgetSkipped.length ? ` (${budgetSkipped.length} skipped over budget)` : ""}${parallelWorkers > 1 ? ` (${parallelWorkers}x parallel)` : ""}`,
     status: "running",
   });
 
