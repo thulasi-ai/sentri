@@ -1111,6 +1111,9 @@ function IntegrationsTab({ isAdmin }) {
         <div className="text-sm text-muted" style={{ marginBottom: 14 }}>
           Install the Sentri GitHub App, then enable native Check Runs per project. Existing projects stay disabled until toggled on.
         </div>
+        {/* TODO(INT-002b): replace with OAuth-style install callback (`GET /api/v1/integrations/github/install/callback`)
+            that auto-captures `installationId` + `repo` after the user picks the target org. Operators currently
+            have to paste the numeric ID + `owner/repo` string by hand — see ROADMAP.md § INT-002b for the scoped fix. */}
         <a className="btn btn-ghost btn-sm" href="https://github.com/apps" target="_blank" rel="noreferrer">
           Install GitHub App <ExternalLink size={12} />
         </a>

@@ -756,6 +756,15 @@ const TRIGGERING_GITHUB_EVENTS = new Map([
   ["check_run", new Set(["rerequested"])],
 ]);
 
+// TODO(INT-002b): App-level webhook receiver missing. This route handles
+// PR/check-suite deliveries (project-scoped via `requireTrigger`), but
+// `installation.deleted` and `installation_repositories.removed` events
+// arrive at the GitHub App's *App-wide* webhook URL — not per-project — so
+// they have no project token. Without a separate `POST /integrations/github/
+// app-webhook` handler that disables stale `github_check_settings` rows by
+// `installationId`, an admin uninstalling the App leaves rows with
+// `enabled=1` + stale `installationId` and subsequent PR deliveries silently
+// 401 against `/app/installations/.../access_tokens`. See ROADMAP.md § INT-002b.
 router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, async (req, res) => {
   const sig = req.get("X-Hub-Signature-256");
   if (!verifyWebhookSignature("github", req.rawBody, sig)) return res.status(401).json({ error: "invalid signature" });

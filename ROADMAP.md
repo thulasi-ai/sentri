@@ -319,19 +319,52 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 
 ### INT-002 — GitHub PR check comments 🟢 Differentiator
 
-**Status:** 🔲 Planned | **Effort:** M | **Source:** PR #8 review (migrated from `docs/roadmap-gaps-pr8.md` before its deletion)
+**Status:** ✅ Complete (PR #15) — full implementation summary in the Completed Work Summary table above. The remaining polish items live under `INT-002b` below.
 
-**Problem:** Every modern QA tool posts a GitHub Check Run on the PR with a deep-link to the run. Today Sentri only sends a webhook callback (ENH-011) — the PR author never sees the result without leaving GitHub. This is a discoverability gap for the most common CI integration target.
+---
 
-**Fix:** GitHub App-based Check Run posting, parameterised by the project's trigger token. Status transitions: `queued` → `in_progress` → `success` / `failure` with summary markdown rendered from the run result (passed / failed counts, gate violations, failing test names, deep-link to Run Detail). Reuses the FEA-001 notification dispatcher pattern. Integrations tab in Settings (shared with DIF-008) holds the GitHub App credentials.
+### INT-002b — GitHub integration polish (installation UX + App-level webhooks) 🔵 Medium
+
+**Status:** 🔲 Planned | **Effort:** M | **Source:** PR #15 review findings — gaps surfaced after the INT-002 happy path landed. Each item below was identified during INT-002 implementation; documented here per AGENT.md "Issue-handling rule" (every finding produces an outcome — fix or ROADMAP entry, never a silent gap).
+
+**Problem:** INT-002 shipped the core PR check-run lifecycle (queued → in_progress → success/failure/neutral) but three follow-on gaps remain:
+
+1. **Installation UX is hand-rolled.** `Settings.jsx` requires admins to manually paste a numeric `installationId` and `owner/repo` string. The "Install GitHub App" button is a generic deep-link to `https://github.com/apps` — there is no OAuth-style callback that auto-captures the installation ID after the user picks the target org/repos. Operators reading docs alone will struggle.
+2. **No App-level webhook handlers.** When an admin uninstalls the Sentri App on GitHub, the per-project rows in `github_check_settings` keep `enabled=1` and `installationId=<stale>`. Subsequent PR deliveries silently 401 against `/app/installations/.../access_tokens` and get swallowed by `concludeGithubCheck`'s log-and-swallow contract — observable in logs but not in the UI. `installation.deleted` and `installation_repositories.{added,removed}` are the canonical events to handle this.
+3. **`installationId` stored in plaintext.** Strictly speaking it's a public numeric identifier (visible in GitHub's UI, request URLs, and webhook payloads), so AES-encrypting it would be cargo-cult relative to how `apiKeyRepo` handles real secrets (`GITHUB_APP_PRIVATE_KEY`, vendor API keys). Listed here for completeness; **resolution: WONTFIX** — encrypting public IDs adds key-management cost with no security benefit. Documenting the decision so a future reviewer doesn't re-open the question.
+
+**Fix:**
+
+1. **OAuth-style installation callback.** Add `GET /api/v1/integrations/github/install/callback?installation_id=<n>&setup_action=<install|update>` (authenticated). When the user clicks the "Install GitHub App" button in Settings → Integrations, redirect to GitHub's App-install URL with `&state=<short-lived signed token bound to projectId>` and a `setup_url` pointing back to this callback. The callback verifies the state, fetches `GET /app/installations/{installation_id}/repositories` (already covered by the existing JWT helper), and presents a "pick which project this installation belongs to" picker pre-filled with the discovered repos. Auto-captures `installationId` + `repo` into `github_check_settings`.
+2. **App-level webhook receiver.** Add `POST /api/v1/integrations/github/app-webhook` — HMAC-verified via the existing `verifyWebhookSignature("github", ...)` helper but NOT `requireTrigger` (these events are App-wide, not project-scoped). Handle:
+   - `installation.deleted` → `githubCheckSettingsRepo.disableByInstallationId(installationId)` (new method) sets `enabled=0` on every project row matching that installation, and emits an `integration.github.disabled` activity row per affected project.
+   - `installation_repositories.removed` → `disableByRepo(installationId, repoFullName)` narrows the disable to just the unlinked repos (admin kept the App installed but unhooked a repo).
+   - `installation.created` / `installation.suspend` / `installation.unsuspend` → no-op (admins re-enable per project via the Settings UI).
+3. **WONTFIX `installationId` encryption** — keep plaintext.
 
 **Files to change:**
-- New `backend/src/utils/integrations/github.js` — Check Run API client + webhook signature verification
-- `backend/src/routes/trigger.js` — emit `queued`/`in_progress`/`completed` Check Runs alongside the existing webhook callback
-- `backend/src/routes/settings.js` — GitHub App config endpoint
-- `frontend/src/pages/Settings.jsx` — extend Integrations tab from DIF-008
+- `backend/src/routes/integrations/github.js` (new) — callback + app-webhook handlers
+- `backend/src/integrations/githubChecks.js` — add `getInstallationRepos(installationId)` and `signInstallState(projectId)` / `verifyInstallState(token)` helpers (reuse the existing TTL-cached installation-token path)
+- `backend/src/database/repositories/githubCheckSettingsRepo.js` — `disableByInstallationId(installationId)`, `disableByRepo(installationId, repo)`, `getByInstallationId(installationId)`
+- `backend/src/middleware/appSetup.js` — extend the `_RAW_BODY_PATH_PATTERN` to cover `/integrations/github/app-webhook`
+- `backend/src/middleware/permissions.json` — `GET /integrations/github/install/callback` (admin), `POST /integrations/github/app-webhook` (none — HMAC-only)
+- `frontend/src/pages/Settings.jsx` — replace the generic `https://github.com/apps` deep-link with the OAuth-style flow: build the GitHub App install URL with `state` + `setup_url`, handle the callback redirect
+- `frontend/src/api.js` — `getGithubInstallStartUrl(projectId)`, callback consumer
+- `backend/tests/github-install-callback.test.js` (new) — state validation, callback happy path, `installation.deleted` disables only matching rows, `installation_repositories.removed` narrows correctly
+- `docs/api/projects.md` — document the App-webhook surface alongside the existing `/trigger/github` entry
+- `docs/changelog.md` — `### Added` entries for the callback + App-webhook receiver
+- `NEXT.md` — promote when scheduled
 
-**Dependencies:** ENH-011 ✅ (trigger token infrastructure), FEA-001 ✅ (notification dispatcher pattern). Coordinate with DIF-008 — both items extend the Integrations tab and share the OAuth-credential storage shape.
+**Acceptance criteria:**
+- Admin clicks "Install GitHub App" in Settings → Integrations, completes the GitHub install flow, lands back on Sentri with `installationId` + `repo` auto-populated. Zero manual paste of numeric IDs.
+- Uninstalling the App on GitHub (admin → org Settings → Installed GitHub Apps → Uninstall) flips every matching project's `enabled` to `0` within ~2s of the webhook firing. Subsequent PR deliveries to those projects ack 200 + `ignored: true` (no stale 401-against-GitHub spam in logs).
+- Removing a specific repo from the App installation (without uninstalling) narrows the disable to just that repo — other projects on the same installation keep working.
+- HMAC verification on `/integrations/github/app-webhook` matches the existing `/trigger/github` shape — same `verifyWebhookSignature("github", ...)` helper, same `GITHUB_WEBHOOK_SECRET`.
+- `installation.created`, `installation.suspend`, `installation.unsuspend` events are received but no-op (logged + ignored).
+
+**Anti-patterns to reject in review:** wiring the App-webhook through `requireTrigger` (it's not project-scoped — would require manufacturing a synthetic project token); silently re-enabling projects on `installation.unsuspend` (suspend ≠ uninstall, but the admin chose to disable; re-enabling without an explicit UI action would surprise them); encrypting `installationId` (see #3 above — public ID, no security benefit); coupling the callback to OAuth (the GitHub *App* install flow is distinct from OAuth user-auth — don't introduce a second OAuth state machine).
+
+**Dependencies:** INT-002 ✅ (PR #15) — reuses `verifyWebhookSignature`, `getInstallationToken`, `githubCheckSettingsRepo`. Pairs naturally with DIF-008 (Jira/Linear sync would benefit from the same OAuth-callback pattern in the same Integrations tab).
 
 ---
 
