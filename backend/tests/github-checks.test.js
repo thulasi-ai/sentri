@@ -13,6 +13,7 @@ import {
   conclude,
 } from '../src/integrations/githubChecks.js';
 import * as runRepo from '../src/database/repositories/runRepo.js';
+import * as projectRepo from '../src/database/repositories/projectRepo.js';
 import { resetDb } from './helpers/test-base.js';
 
 const { privateKey: TEST_PRIVATE_KEY } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -149,6 +150,15 @@ test('findByGithubDeliveryId returns the existing run so retried deliveries are 
   // events and must each produce a fresh Check Run; only retries of the
   // SAME delivery must reuse the existing checkRunId.
   const projectId = 'PRJ-IDEM';
+  // FK: runs.projectId references projects(id) — seed the parent row before
+  // inserting runs, otherwise SQLite raises SQLITE_CONSTRAINT_FOREIGNKEY.
+  projectRepo.create({
+    id: projectId,
+    name: 'Idempotency Project',
+    url: 'https://idem.test',
+    createdAt: new Date().toISOString(),
+    status: 'idle',
+  });
   runRepo.create({
     id: 'RUN-IDEM-OLD',
     projectId,
