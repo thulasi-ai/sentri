@@ -208,31 +208,6 @@ The following items have been verified complete against the codebase and are **n
 
 ---
 
-### DIF-015b — Recorder selector quality: adopt Playwright's selectorGenerator 🔵 Medium
-
-**Status:** ✅ Complete (PR #3 — naming alignment; PR #120 — Gap 1 nth=N disambiguation; PR #4 — Gap 2 Playwright `InjectedScript` delegation + fallback; PR #11 — Gap 3 iframe `frameLocator` emission + shadow-DOM via InjectedScript delegation) | **Effort:** S | **Source:** Follow-on from DIF-015
-
-> **Progress:** All three gaps shipped. Gap 3 iframe codegen landed in PR #11 via `actionsToPlaywrightCode`'s `frameLocator('iframe[src*=<frameUrl>]').first()` branch; shadow-DOM traversal is handled by Playwright's InjectedScript on the primary selector-generation path shipped in PR #4.
-
-#### ✅ Gap 1 — nth=N disambiguation for duplicate CSS matches (PR #120)
-
-When the CSS-fallback branch of `selectorGenerator` produces a selector that matches multiple elements on the page (e.g. three identical `button.btn-primary`), the recorder now appends a Playwright `>> nth=N` token so replay clicks the same element the user clicked. Implementation lives at `backend/src/runner/recorder.js` in `disambiguateCss()` — a single `document.querySelectorAll` call, scoped to CSS-fallback selectors only (semantic selectors like `data-testid=`, `role=`, `text=` pass through unchanged because an `aria-label` collision is a real test smell that should surface, not be silently disambiguated away).
-
-#### ✅ Gap 2 — Playwright `InjectedScript` delegation with hand-rolled fallback (PR #4)
-
-**Status:** ✅ Complete (PR #4) | **Effort:** S | **Priority:** 🔵 Medium
-
-Shipped two layers instead of the originally-scoped pure heuristic:
-
-1. **Primary path — Playwright delegation.** The recorder now loads Playwright's pre-bundled `playwright-core/lib/server/injected/injectedScriptSource.js` at server start (`backend/src/runner/playwrightSelectorGenerator.js`), evaluates it in page scope via `addInitScript`, constructs an `InjectedScript` instance with feature-detected constructor shapes, and exposes `window.__playwrightSelector(el)` as the in-page entry point. `selectorGenerator` inside `RECORDER_SCRIPT` calls it first — same algorithm Playwright's own `codegen` uses, so ancestor scoring, machine-generated-testid demotion, shadow-DOM traversal, and iframe locator chains come for free.
-2. **Fallback path — hand-rolled chain.** When the bundle can't be resolved (missing install, Playwright bumped to a layout-incompatible version, IIFE throws), the loader returns `available: false` and `selectorGenerator` drops through to the existing `data-testid → role+name → label → placeholder → CSS` chain. The fallback retains the originally-scoped noise-testid heuristic (`isNoisyTestId`: numeric-only, `el_`/`comp-`/`t-` + hex tail ≥4 chars, length > 30 with no separators) so a degraded recorder still demotes generated testids correctly.
-
-**Risks knowingly accepted:** Playwright marks `lib/server/injected/*` as internal and **not covered by semver**. Symbol churn across minor releases will silently degrade the primary path to fallback. Track via the launch-time health probe (planned follow-up) and the `cross-browser-smoke`-style CI canary.
-
-**Files shipped:** new `backend/src/runner/playwrightSelectorGenerator.js` (loader + bootstrap) · `backend/src/runner/recorder.js` (delegation + fallback in `selectorGenerator`, init-script wiring in `startRecording`) · `backend/tests/recorder.test.js` (fixture tests for `isNoisyTestId`, simulation tests for fallback ordering, contract tests for the loader/bootstrap) · `docs/changelog.md` entry.
-
----
-
 ### DIF-015c — Recorder gaps backlog (action vocabulary, assertions, pause/undo, auth, mobile) 🔵 Medium
 
 **Status:** 🔲 Planned | **Effort:** L (split into sub-items below) | **Source:** PR #115 dogfooding + competitive review (BearQ / Mabl / Testim)
@@ -421,12 +396,6 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 *Goal: Advance Sentri beyond triggered QA into a genuinely autonomous system that makes intelligent decisions about what to test, when to test, and what failures mean. Items in this phase are post-Phase 3 and can be prioritised individually based on customer demand.*
 
 > **Note:** Several Phase 4 items have already shipped opportunistically alongside other work and appear in the Completed Work Summary above — `AUTO-001` (risk-based test selection / ordering, PR #15), `AUTO-002` + `AUTO-002b` (diff-aware crawling for link-crawl and state-explorer modes, PR #12), `AUTO-003` + `AUTO-003b` (confidence-based auto-approval + provenance / audit trail, PR #10), `AUTO-005` (test retry, PR #2), `AUTO-006` (network conditions, PR #3), `AUTO-007` (geolocation/locale/timezone, PR #94), `AUTO-012` (SLA / quality gate enforcement — full backend + UI + CI consumer docs, PR #2), `AUTO-013` (stale test detection, PR #99), `AUTO-015` + `AUTO-015b` (continuous test discovery on Vercel/Netlify deployment events + "Last deployment run" badge, PR #12), `AUTO-016` backend slice (axe-core scan + persistence, PR #121), `AUTO-016b` (frontend `CrawlView` accessibility panel + dashboard "Top Accessibility Offenders" rollup, PR #1), `AUTO-017` (Web Vitals performance budgets, PR #8), `AUTO-017.3` (Web Vitals trend charts, PR #9), and `AUTO-019` (per-test run diffing, PR #10). The remaining items are scoped here and ready to start; the immediate next sprint target is `INT-002` (GitHub PR check comments) tracked in `NEXT.md`.
-
----
-
-### AUTO-001 — Intelligent test selection (risk-based run ordering) ✅ Complete
-
-**Status:** ✅ Complete (PR #15). See the Completed Work Summary row above for the delivered scope. The shipped implementation lives at `backend/src/pipeline/riskScorer.js` (the originally-planned `backend/src/utils/riskScorer.js` was relocated to `pipeline/` to align with the other ordering primitives in the run-planning chain). `testRepo.lastFailedAt` / `flakyScore` were not added as new columns — the scorer derives the same signal from `runs.results[]` history (already JSON-persisted), keeping the change additive with no schema migration.
 
 ---
 
