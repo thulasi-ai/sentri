@@ -38,7 +38,13 @@ export function isSmokeTest(test) {
 
 export function scoreTestRisk(test, runHistory = [], { now = Date.now(), changedPages = [] } = {}) {
   let score = 0;
-  const rows = runHistory.filter((r) => r?.testId === test.id);
+  // Exclude budget-skipped rows from the history: they reflect a dispatch
+  // decision (the test never ran), not an execution outcome. Counting them
+  // as failures would give a previously budget-skipped test a near-maximum
+  // risk score on the next run and corrupt the ranking across runs.
+  const rows = runHistory.filter(
+    (r) => r?.testId === test.id && !(r.status === "skipped" && r.skipReason === "over_budget"),
+  );
   const recent = rows.slice(-10);
   const failed = recent.filter((r) => r.status !== "passed").length;
   const passRate = recent.length ? (recent.length - failed) / recent.length : 1;

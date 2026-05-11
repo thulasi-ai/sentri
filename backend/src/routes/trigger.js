@@ -400,9 +400,18 @@ async function handleTrigger(req, res) {
   // AUTO-001: risk-ordered + budget-capped dispatch set. `tests` (approved order)
   // is preserved for the audit-trail `testIds` snapshot below; reorder is for
   // DISPATCH only.
-  const projectRuns = runRepo.getByProjectId(project.id);
-  const history = projectRuns.flatMap((r) => Array.isArray(r.results) ? r.results : []);
-  const latestCrawl = projectRuns.find((r) => r.type === "crawl" && Array.isArray(r.changedPages) && r.changedPages.length);
+  //
+  // History is bounded to the 20 most recent completed test runs via the lean
+  // accessor `getRecentCompletedWithResults` (id/type/status/startedAt/results
+  // only — no testQueue/promptAudit/qualityAnalytics blobs). The scorer caps
+  // its per-test window at the last 10 results anyway (`riskScorer.js`
+  // `rows.slice(-10)`), so 20 runs gives ample headroom while keeping memory
+  // bounded on projects with hundreds of historical runs.
+  const RISK_HISTORY_RUN_LIMIT = 20;
+  const recentRuns = runRepo.getRecentCompletedWithResults(project.id, RISK_HISTORY_RUN_LIMIT);
+  const history = recentRuns.flatMap((r) => Array.isArray(r.results) ? r.results : []);
+  // Lean lookup — single-row SQL with `LIMIT 1`, no full-table scan.
+  const latestCrawl = runRepo.getLatestCrawlWithChangedPages(project.id);
   const changedPages = (latestCrawl?.changedPages || []).map((p) => p?.url || p).filter(Boolean);
   const safeBudget = normalizeBudgetMinutes(budgetMinutes);
   const riskOrderedTests = orderTestsByRisk(tests, history, { changedPages });
