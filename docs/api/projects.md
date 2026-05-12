@@ -119,6 +119,10 @@ Handled events:
 - `installation_repositories.removed` disables only rows matching the removed `owner/repo` values for the installation.
 - `installation.created`, `installation.suspend`, and `installation.unsuspend` are logged for existing rows and otherwise leave settings unchanged; admins explicitly re-enable projects from Settings.
 
+### Install-state replay protection
+
+The one-shot `state` JWT minted by `GET /install/start/:projectId` is nonce-tracked to prevent replay attacks. When `REDIS_URL` is configured, nonces live in Redis with a 10-minute TTL and are shared across replicas — the canonical configuration for multi-instance deployments. When Redis is unavailable, Sentri falls back to a process-local `Map`; this is safe for single-replica / dev setups but logs a one-shot warning at boot because an attacker who captures a callback URL could potentially replay it against a different replica. **Provision Redis (`REDIS_URL`) for any multi-instance production deployment.**
+
 ## CI/CD Trigger
 
 ```

@@ -6,12 +6,14 @@
 import crypto from "node:crypto";
 import { signJwt, verifyJwt, getJwtSecret } from "../middleware/authenticate.js";
 import { redis, isRedisAvailable } from "../utils/redisClient.js";
+import { formatLogLine } from "../utils/logFormatter.js";
 
 const CHECK_NAME = process.env.GITHUB_CHECK_NAME || "Sentri QA";
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const tokenCache = new Map();
 const installStateCache = new Map();
 const INSTALL_STATE_TTL_SEC = 600;
+let inMemoryNonceWarned = false;
 
 function base64url(input) {
   return Buffer.from(input).toString("base64url");
@@ -97,6 +99,7 @@ export function clearInstallationTokenCache() {
  */
 export function clearInstallStateCache() {
   installStateCache.clear();
+  inMemoryNonceWarned = false;
 }
 
 /**
@@ -136,6 +139,20 @@ async function storeInstallNonce(nonce, ttlSec) {
   if (isRedisAvailable() && redis) {
     await redis.set(installStateKey(nonce), "1", "EX", ttlSec, "NX");
     return;
+  }
+  // In-memory fallback is process-local: in a multi-replica deploy without
+  // Redis, an attacker who captured a redirect URL could potentially replay
+  // it against a different replica that has never seen the nonce. Warn once
+  // so operators notice in production logs; single-replica / dev setups are
+  // safe. Industry-standard fix is to provision Redis (see REDIS_URL).
+  if (!inMemoryNonceWarned) {
+    inMemoryNonceWarned = true;
+    console.warn(formatLogLine(
+      "warn",
+      "",
+      "[github-install] Redis unavailable; install-state replay protection is process-local. "
+        + "Set REDIS_URL for multi-replica deployments — see docs/api/projects.md § GitHub App Integration.",
+    ));
   }
   installStateCache.set(nonce, Date.now() + ttlSec * 1000);
 }

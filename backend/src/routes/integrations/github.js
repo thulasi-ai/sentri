@@ -39,6 +39,12 @@ function githubInstallUrl(state) {
   if (!slug) return null;
   const url = new URL(`https://github.com/apps/${encodeURIComponent(slug)}/installations/new`);
   url.searchParams.set("state", state);
+  // `setup_url` is a soft override for multi-tenant / preview-env deployments
+  // whose App registration's static Setup URL points elsewhere. GitHub's
+  // documented post-install redirect is the App's registered Setup URL; this
+  // param is harmless if ignored and useful when the deployment needs the
+  // callback to land on this exact origin (staging vs prod). `state` carries
+  // the project binding either way, so security is unaffected.
   const apiBase = (process.env.API_BASE_URL || process.env.APP_URL || process.env.PUBLIC_API_URL || "").replace(/\/$/, "");
   if (apiBase) url.searchParams.set("setup_url", `${apiBase}/api/v1/integrations/github/install/callback`);
   return url.toString();
