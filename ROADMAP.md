@@ -1245,7 +1245,7 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 | Capabilities | 4 | 2 | 0 | 2 | CAP-001 (data-driven testing), CAP-002 (test sharding) |
 | Process automation | 1 | 1 | 0 | 0 | — |
 | Maintenance | 17 | 5 | 0 | 12 | MNT-001/002/003 (narrowed)/004/005/008/012/013/014/015/016/017 |
-| **Totals** | **99** | **56** | **0** | **43** | |
+| **Totals** | **99** | **57** | **0** | **42** | |
 
 <!--
   PR #12 ledger reconciliation (AUTO-002 + AUTO-002b + AUTO-015 + AUTO-015b ship + AUTO-020 supersede):
@@ -1263,7 +1263,7 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
       items themselves are gone from the ledger, not just unshipped).
     - Net Totals impact: Total 83 → 81, Done 55 → 53, Pending unchanged at 28.
 -->
-**Total tracked items:** 99 across 9 categories — **57 complete** (58%), **1 in current PR** (INT-002b), **41 remaining**
+**Total tracked items:** 99 across 9 categories — **57 complete** (58%), **0 in current PR**, **42 remaining**
 
 **Blockers (must ship before paid tier / enterprise demo):**
 - ✅ All Phase 1–4 blockers resolved.

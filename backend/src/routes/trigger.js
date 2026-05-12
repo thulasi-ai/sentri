@@ -520,7 +520,18 @@ async function handleTrigger(req, res) {
   const riskOrderedTests = orderTestsByRisk(impactScopedTests, history, { changedPages, changedFiles: changedFiles || [], routeMap });
   const { kept: selectedTests, skipped: budgetSkipped } = applyBudgetToQueue(riskOrderedTests, safeBudget);
   const riskById = new Map(riskOrderedTests.map((t) => [t.id, t.riskScore]));
-  const impactSkipped = !triggerCrawl && impact.fallbackReason === "no_impact"
+  // AUTO-004: seed `skipped_no_impact` markers for every approved test that
+  // wasn't dispatched. This covers BOTH the full no-impact case
+  // (`fallbackReason === "no_impact"` — zero matches) AND the partial-match
+  // case (`fallbackReason === null` — some matches, some not). Without the
+  // partial-match branch, non-impacted tests would be silently dropped from
+  // the run (filtered out at `impactScopedTests` above but never recorded
+  // as a resolution), violating the AGENT.md "every approved test gets a
+  // resolution" rule and breaking the pass-rate denominator. Skipped only
+  // when the run is full-suite (`no_changed_files` / `github_fetch_failed`
+  // / `crawl_run`) where every test is dispatched.
+  const impactSkipped = !triggerCrawl
+    && (impact.fallbackReason === "no_impact" || impact.fallbackReason === null)
     ? tests.filter((t) => !impactedIdSet.has(t.id))
     : [];
   if (!triggerCrawl) {
