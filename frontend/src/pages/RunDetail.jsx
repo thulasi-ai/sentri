@@ -31,6 +31,7 @@ import AgentTag from "../components/shared/AgentTag.jsx";
 import BrowserBadge from "../components/shared/BrowserBadge.jsx";
 import GateBadge from "../components/shared/GateBadge.jsx";
 import usePageTitle from "../hooks/usePageTitle.js";
+import { countNonExecutedSkips } from "../utils/skipReasons.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -395,12 +396,14 @@ export default function RunDetail() {
   // the first SSE snapshot — results.length grows as tests complete and would
   // show "0 test cases" until the first result arrives.
   const total = run.total ?? results.length;
-  // AUTO-001: budget-skipped tests never executed and shouldn't dilute the
-  // pass-rate denominator (they're surfaced separately via the
-  // `⏱ N skipped (over budget)` badge above). Mirrors the
-  // `evaluateQualityGates()` denominator semantics in
-  // `backend/src/testRunner.js` so the UI and the gate verdict agree.
-  const passRateDenominator = Math.max(0, total - skippedOverBudget - skippedNoImpact);
+  // AUTO-001 / AUTO-004: non-executed skips (`over_budget`, `skipped_no_impact`)
+  // never ran and shouldn't dilute the pass-rate denominator — they're each
+  // surfaced via their own badge above. Routes through `countNonExecutedSkips`
+  // (frontend/src/utils/skipReasons.js) so the list of excluded skip reasons
+  // stays byte-aligned with `evaluateQualityGates()` in `backend/src/testRunner.js`
+  // (via `backend/src/utils/skipReasons.js`). If the two ever drift the gate
+  // verdict and the rendered pass rate will disagree on the same run.
+  const passRateDenominator = Math.max(0, total - countNonExecutedSkips(results));
   const passRate = passRateDenominator > 0 ? Math.round((passed / passRateDenominator) * 100) : null;
 
   const traceUrl = run.tracePath ?? null;

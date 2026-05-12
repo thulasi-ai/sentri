@@ -45,6 +45,7 @@ import { signRunArtifacts, signArtifactUrl } from "./middleware/appSetup.js";
 import { writeArtifactBuffer } from "./utils/objectStorage.js";
 import fs from "fs";
 import { recordMetric } from "./utils/recordMetric.js";
+import { isNonExecutedSkip } from "./utils/skipReasons.js";
 
 
 function evaluateQualityGates(gates, run) {
@@ -68,9 +69,7 @@ function evaluateQualityGates(gates, run) {
   // `passRateDenominator = total - skippedOverBudget - skippedNoImpact`.
   const rawTotal = Number(run.total || 0);
   const skippedNonExecuted = Array.isArray(run.results)
-    ? run.results.filter(
-        (r) => r?.status === "skipped" && (r?.skipReason === "over_budget" || r?.skipReason === "skipped_no_impact"),
-      ).length
+    ? run.results.filter(isNonExecutedSkip).length
     : 0;
   const total = Math.max(0, rawTotal - skippedNonExecuted);
   const failed = Number(run.failed || 0);
