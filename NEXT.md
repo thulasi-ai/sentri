@@ -72,6 +72,17 @@ Single-host parallelism caps suite size at the local worker count (~4–8 on a R
 - Aborting the parent run via `DELETE /runs/:runId` propagates to all shard workers via Redis pub/sub; orphaned shard jobs are not possible.
 - A shard worker crashing mid-execution marks the run `failed` with `shardsCompleted < shardCount` surfaced in the response, not silently completes.
 - `MAX_WORKERS` clamp prevents `shards: 100` from exhausting the worker pool; clamped server-side, never client-trusted.
+### 3 · AUTO-010 — Root cause analysis and failure clustering
+**Effort:** L | **Priority:** 🟢 Differentiator | **Dependencies:** none (composes naturally with AUTO-004 ✅ PR #18 — impact-scoped runs that still fail are the most useful input to clustering, since the noise floor is already lower) | **Source:** `ROADMAP.md` Phase 4 (AUTO-010)
+When 15 tests fail in a run, they often share a single root cause (login endpoint down, auth-service degraded, shared API 5xx). Sentri reports each failure independently — `defectBreakdown` in `Dashboard.jsx` buckets by error-type category but never clusters by **shared cause**. An autonomous QA system should group failures by shared error-message fingerprint, common `sourceUrl`, and common failing step selector, then report "1 root cause → 15 affected tests" so triage stops chasing 15 tickets for one outage. Pairs naturally with AUTO-004's impact-scoped runs (lower noise floor → cleaner clusters) and AUTO-001's risk scorer (high-risk tests are the cluster anchors).
+**Files:** new `backend/src/pipeline/failureClusterer.js` (pure function — error-fingerprint hashing + URL-prefix grouping + selector-similarity edit distance, no DB access) · `backend/src/testRunner.js` (call clusterer on run completion, attach `rootCauses` to run record) · `backend/src/database/repositories/runRepo.js` (`rootCauses` JSON field + INSERT_COL) · new migration `023_run_root_causes.sql` · `frontend/src/pages/RunDetail.jsx` (Root Cause Summary panel above the test list) · `frontend/src/api.js` (no new endpoint — `rootCauses` rides on `GET /runs/:runId`) · new `backend/tests/failure-clusterer.test.js`
+
+**Acceptance criteria:**
+- A run with 10 failures sharing the same `Error: ECONNREFUSED https://api.example.com/auth` message clusters into a single "likely root cause: auth service unreachable" row with 10 affected tests.
+- Failures with truly distinct causes (different URLs, different errors) produce N separate clusters of size 1 each — no false grouping.
+- Clustering runs in <100ms for a 100-test run; no LLM calls (deterministic fingerprint hashing only, AI-generated explanations are AUTO-021's scope).
+- Runs with zero failures persist `rootCauses: []` and render unchanged (zero regression).
+- The panel collapses by default when there's only one cluster, expands automatically when ≥2 clusters surface.
 
 > **Phase 5 audit-hardening blockers** (`SEC-004` MFA, `SEC-006` PII firewall, `INF-007` OTel/Sentry, `INF-008` Postgres-default + dual-DB CI matrix, `AUTO-022` AI eval harness) remain queued in `ROADMAP.md` Phase 5 — interleave with feature delivery per the "Recommended PR order" block at the bottom of ROADMAP.md.
 
