@@ -387,6 +387,10 @@ export default function RunDetail() {
   // `status: "skipped"` + `skipReason: "over_budget"` so they're attributable
   // (never silently dropped).
   const skippedOverBudget = results.filter((r) => r.status === "skipped" && r.skipReason === "over_budget").length;
+  const skippedNoImpact = results.filter((r) => r.status === "skipped" && r.skipReason === "skipped_no_impact").length;
+  const changedFiles = Array.isArray(run.changedFiles) ? run.changedFiles : [];
+  const impactAnalysis = run.impactAnalysis && typeof run.impactAnalysis === "object" ? run.impactAnalysis : null;
+  const impactedCount = Array.isArray(impactAnalysis?.impactedTestIds) ? impactAnalysis.impactedTestIds.length : null;
   // Use run.total (set upfront by the backend) so the count is correct from
   // the first SSE snapshot — results.length grows as tests complete and would
   // show "0 test cases" until the first result arrives.
@@ -396,7 +400,7 @@ export default function RunDetail() {
   // `⏱ N skipped (over budget)` badge above). Mirrors the
   // `evaluateQualityGates()` denominator semantics in
   // `backend/src/testRunner.js` so the UI and the gate verdict agree.
-  const passRateDenominator = Math.max(0, total - skippedOverBudget);
+  const passRateDenominator = Math.max(0, total - skippedOverBudget - skippedNoImpact);
   const passRate = passRateDenominator > 0 ? Math.round((passed / passRateDenominator) * 100) : null;
 
   const traceUrl = run.tracePath ?? null;
@@ -586,6 +590,15 @@ export default function RunDetail() {
               ⏱ {skippedOverBudget} skipped (over budget)
             </span>
           )}
+          {!isCrawl && skippedNoImpact > 0 && (
+            <span
+              className="badge badge-gray"
+              style={{ fontSize: "0.7rem" }}
+              title="Tests skipped because the git diff did not map to their captured routes."
+            >
+              {skippedNoImpact} skipped (no impact)
+            </span>
+          )}
           {!isCrawl && run.budgetMinutes != null && (
             <span style={{ fontSize: "0.72rem", color: "var(--text3)" }}>
               budget: {run.budgetMinutes}m
@@ -618,6 +631,39 @@ export default function RunDetail() {
           )}
           <RunCompareView data={compareData} loading={compareLoading} error={compareError} />
         </>
+      )}
+
+
+      {!isCrawl && !isGenerate && (changedFiles.length > 0 || impactAnalysis) && (
+        <div className="card" style={{ padding: 14, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: "0.9rem" }}>Impact scope</div>
+            {impactedCount !== null && (
+              <span className="badge badge-blue" style={{ fontSize: "0.7rem" }}>
+                {impactedCount} impacted / {total} approved
+              </span>
+            )}
+          </div>
+          {impactAnalysis?.fallbackReason && (
+            <div style={{ color: "var(--text3)", fontSize: "0.76rem", marginBottom: 8 }}>
+              Fallback: {impactAnalysis.fallbackReason.replace(/_/g, " ")}
+            </div>
+          )}
+          {changedFiles.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {changedFiles.slice(0, 12).map((file) => (
+                <code key={file} style={{ fontSize: "0.72rem", background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 6px" }}>
+                  {file}
+                </code>
+              ))}
+              {changedFiles.length > 12 && (
+                <span style={{ color: "var(--text3)", fontSize: "0.76rem" }}>+{changedFiles.length - 12} more</span>
+              )}
+            </div>
+          ) : (
+            <div style={{ color: "var(--text3)", fontSize: "0.76rem" }}>No changed files were supplied; Sentri used the full approved suite.</div>
+          )}
+        </div>
       )}
 
       {/* ── Pass rate bar (test runs only) ─────────────────────────────── */}
