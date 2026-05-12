@@ -1183,8 +1183,17 @@ export default function Settings() {
   const { user } = useAuth();
   const isAdmin = user?.workspaceRole === "admin";
   const visibleTabs = SETTINGS_TABS.filter(t => isAdmin || !t.adminOnly);
-  // Default to first visible tab so non-admins don't land on a locked section.
-  const [tab, setTab]           = useState(visibleTabs[0]?.key || "account");
+  // Honour `?tab=<key>` deep links (e.g. the GitHub App install callback
+  // redirects to `/settings?tab=integrations&github=installed&…` and the
+  // IntegrationsTab success banner only renders when that tab is active).
+  // Fall back to the first visible tab so non-admins don't land on a locked
+  // section. Computed once at mount via lazy init — subsequent navigations
+  // within Settings use the in-component `setTab`.
+  const [tab, setTab]           = useState(() => {
+    const urlTab = new URLSearchParams(window.location.search).get("tab");
+    if (urlTab && visibleTabs.some(t => t.key === urlTab)) return urlTab;
+    return visibleTabs[0]?.key || "account";
+  });
 
   const bundleQuery = useSettingsBundleQuery();
 
