@@ -1226,7 +1226,7 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 
 **Sentri's unique strengths:** Self-hosted + AI generation + human review queue + multi-provider LLM + standalone Playwright export (✅ DIF-006). No competitor offers all five together. BearQ narrows the AI generation gap but remains SaaS-only with no self-hosted option or LLM provider choice.
 
-**Critical gaps to close next:** INT-002b (GitHub integration polish — current PR, closes the two `TODO(INT-002b):` markers from PR #15: OAuth-style install callback + App-level webhook receiver for `installation.deleted`) · AUTO-004 (test impact analysis from git diff — builds on AUTO-001's shipped risk scorer and consumes INT-002's GitHub PR-files API path) · DIF-012 (multi-environment support — high enterprise-procurement value, pairs with shipped INT-002 for per-env check-name suffixes).
+**Critical gaps to close next:** CAP-001 (data-driven testing — current PR) · DIF-012 (multi-environment support, queue slot 1) · CAP-002 (distributed test sharding, queue slot 2) · AUTO-010 (root-cause analysis & failure clustering, queue slot 3). Prior critical gaps closed: AI-001 ✅ PR #14 (generic OpenAI-compatible provider adapter), AUTO-001 ✅ PR #15 (risk-based test selection), AUTO-004 ✅ PR #18 (test impact analysis from git diff / GitHub PR files), INT-002 ✅ PR #15 (GitHub PR check comments).
 
 > **Previous priorities ✅ shipped:** DIF-001 · DIF-002/002b · DIF-003 · DIF-004 · DIF-005 · DIF-006 · DIF-007 · DIF-011 · DIF-013 · DIF-014 · DIF-015 · DIF-015b · DIF-016 · INT-002 (PR #15) · AUTO-001 (PR #15) · AUTO-002/002b/005/006/007/012/013/015/015b/016/016b/017/019 · AI-001 (PR #14) · CAP-003 · CAP-004 · MET-001 · UI-REFACTOR-001.
 
