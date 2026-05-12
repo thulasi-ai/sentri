@@ -50,10 +50,14 @@ export function isSmokeTest(test) {
  */
 export function scoreTestRisk(test, runHistory = [], { now = Date.now(), changedPages = [], changedFiles = [], routeMap = {} } = {}) {
   let score = 0;
-  // Exclude budget-skipped rows from the history: they reflect a dispatch
-  // decision (the test never ran), not an execution outcome. Counting them
-  // as failures would give a previously budget-skipped test a near-maximum
-  // risk score on the next run and corrupt the ranking across runs.
+  // Exclude *all* skipped rows from the history: a skip reflects a dispatch
+  // decision (the test never ran), not an execution outcome. Counting any
+  // skip kind — `over_budget` (AUTO-001) or `skipped_no_impact` (AUTO-004) —
+  // as a failure would give a previously skipped test a near-maximum risk
+  // score on the next run and corrupt the ranking across runs. Broadened
+  // from the original `over_budget`-only filter in AUTO-004 so the new
+  // `skipped_no_impact` rows persisted on the run record receive the same
+  // treatment.
   const rows = runHistory.filter(
     (r) => r?.testId === test.id && r.status !== "skipped",
   );
