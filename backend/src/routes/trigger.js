@@ -776,9 +776,20 @@ router.post("/projects/:id/trigger/github", expensiveOpLimiter, requireTrigger, 
   }
 
   const payload = normalizeGithubPayload(req.body || {});
+  // Only short-circuit when settings exist AND are explicitly disabled, or
+  // when the configured repo doesn't match the incoming payload. Projects
+  // that have never configured `github_check_settings` should still be able
+  // to trigger via this webhook — the GitHub Check Run side of things is
+  // already gated separately inside `prepareGithubCheck` (no settings ⇒
+  // no check-run created, but the Sentri test run still executes). Treating
+  // "no settings row" as "disabled" here would silently break every project
+  // that hasn't opted into PR checks yet — see review on PR #17.
   const settings = githubCheckSettingsRepo.getByProjectId(req.triggerProject?.id || req.params.id);
-  if (!settings?.enabled || (settings.repo && payload.repo && settings.repo !== payload.repo)) {
+  if (settings && settings.enabled === false) {
     return res.status(200).json({ ok: true, ignored: true, reason: "github checks disabled" });
+  }
+  if (settings?.repo && payload.repo && settings.repo !== payload.repo) {
+    return res.status(200).json({ ok: true, ignored: true, reason: "repo mismatch" });
   }
 
   // Capture the GitHub delivery UUID so handleTrigger can dedupe retries.

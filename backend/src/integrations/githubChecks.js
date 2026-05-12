@@ -171,29 +171,53 @@ async function claimInstallNonce(nonce) {
 /**
  * Sign a short-lived, one-shot state token for the GitHub App install flow.
  *
+ * The state JWT is the only auth on the callback route because GitHub
+ * redirects the user back from `github.com` — a cross-site navigation that
+ * browsers refuse to attach `SameSite=Strict` cookies to (the default for
+ * same-origin Sentri deployments). The signed nonce-tracked state proves
+ * an authenticated admin initiated the flow; the embedded `actor` fields
+ * let the callback log who completed the install without `req.authUser`.
+ *
  * @param {string} projectId
  * @param {Object} [options]
  * @param {number} [options.ttlSec=600]
+ * @param {{ userId?: string, userName?: string }} [options.actor]
+ *   Optional authenticated user metadata captured at sign-time so the
+ *   callback can attribute the activity log entry.
  * @returns {Promise<string>} Signed state JWT.
  */
-export async function signInstallState(projectId, { ttlSec = INSTALL_STATE_TTL_SEC } = {}) {
+export async function signInstallState(projectId, { ttlSec = INSTALL_STATE_TTL_SEC, actor = {} } = {}) {
   if (!projectId) throw new Error("projectId is required");
   const nonce = crypto.randomUUID();
   await storeInstallNonce(nonce, ttlSec);
-  return signJwt({ projectId, nonce, purpose: "github-install" }, getJwtSecret(), ttlSec);
+  return signJwt(
+    {
+      projectId,
+      nonce,
+      purpose: "github-install",
+      actorId: actor.userId || null,
+      actorName: actor.userName || null,
+    },
+    getJwtSecret(),
+    ttlSec,
+  );
 }
 
 /**
  * Verify and claim a GitHub App install state token.
  *
  * @param {string} token
- * @returns {Promise<{projectId: string}|null>} Decoded project binding, or null.
+ * @returns {Promise<{projectId: string, actorId: string|null, actorName: string|null}|null>}
  */
 export async function verifyInstallState(token) {
   const payload = verifyJwt(token, getJwtSecret());
   if (!payload || payload.purpose !== "github-install" || !payload.projectId || !payload.nonce) return null;
   if (!await claimInstallNonce(payload.nonce)) return null;
-  return { projectId: payload.projectId };
+  return {
+    projectId: payload.projectId,
+    actorId: payload.actorId || null,
+    actorName: payload.actorName || null,
+  };
 }
 
 function parseRepo(repo) {

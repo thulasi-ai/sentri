@@ -7,6 +7,9 @@ import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { requireRole } from "../../middleware/requireRole.js";
 import { workspaceScope } from "../../middleware/workspaceScope.js";
+// requireAuth/workspaceScope/requireRole are applied to `/install/start` only;
+// `/install/callback` is authenticated by the signed state JWT (see note below),
+// and `/app-webhook` is authenticated by GitHub's HMAC signature.
 import { logActivity } from "../../utils/activityLogger.js";
 import * as projectRepo from "../../database/repositories/projectRepo.js";
 import * as githubCheckSettingsRepo from "../../database/repositories/githubCheckSettingsRepo.js";
@@ -74,13 +77,26 @@ function logInstallationEvent(installationId, type, detail, meta = {}) {
 router.get("/install/start/:projectId", requireAuth, workspaceScope, requireRole("admin"), async (req, res) => {
   const project = projectRepo.getByIdInWorkspace(req.params.projectId, req.workspaceId);
   if (!project) return res.status(404).json({ error: "Project not found" });
-  const state = await signInstallState(project.id);
+  // Embed the authenticated admin's identity in the state JWT so the callback
+  // — which runs unauthenticated, see below — can still attribute the
+  // activity log entry.
+  const state = await signInstallState(project.id, {
+    actor: { userId: req.authUser?.sub, userName: req.authUser?.name || req.authUser?.email },
+  });
   const url = githubInstallUrl(state);
   if (!url) return res.status(503).json({ error: "GITHUB_APP_SLUG is required to start installation" });
   res.json({ url });
 });
 
-router.get("/install/callback", requireAuth, workspaceScope, requireRole("admin"), async (req, res) => {
+// NOTE: this callback INTENTIONALLY does NOT use `requireAuth` / `workspaceScope`.
+// GitHub redirects the browser back from `github.com`, which is a cross-site
+// navigation. In same-origin Sentri deployments the auth cookie uses
+// `SameSite=Strict` (see `middleware/appSetup.js`) — browsers refuse to send
+// `Strict` cookies on cross-site navigations, so `requireAuth` would 401
+// every install. The signed one-shot state JWT is the auth here: it's
+// nonce-tracked (replay-proof), signed with JWT_SECRET (unforgeable), and
+// binds a specific project + originating admin captured at `/install/start`.
+router.get("/install/callback", async (req, res) => {
   const installationId = req.query.installation_id ? String(req.query.installation_id).trim() : "";
   const setupAction = req.query.setup_action ? String(req.query.setup_action) : "";
   const state = req.query.state ? String(req.query.state) : "";
@@ -90,7 +106,11 @@ router.get("/install/callback", requireAuth, workspaceScope, requireRole("admin"
   const verified = await verifyInstallState(state);
   if (!verified) return res.status(400).json({ error: "invalid or expired install state" });
 
-  const project = projectRepo.getByIdInWorkspace(verified.projectId, req.workspaceId);
+  // Workspace scoping is implicit: the state JWT was issued only after an
+  // authenticated admin passed `getByIdInWorkspace` in `/install/start`,
+  // so `verified.projectId` is already bound to a workspace the initiating
+  // admin can administer. Plain `getById` is sufficient here.
+  const project = projectRepo.getById(verified.projectId);
   if (!project) return res.status(404).json({ error: "Project not found" });
 
   const repos = await getInstallationRepos(installationId);
@@ -112,8 +132,8 @@ router.get("/install/callback", requireAuth, workspaceScope, requireRole("admin"
     projectId: project.id,
     projectName: project.name,
     workspaceId: project.workspaceId,
-    userId: req.authUser?.sub,
-    userName: req.authUser?.name || req.authUser?.email,
+    userId: verified.actorId || undefined,
+    userName: verified.actorName || undefined,
     detail: `GitHub App installed for ${repo}`,
     meta: { installationId, repo, setupAction: setupAction || null },
   });

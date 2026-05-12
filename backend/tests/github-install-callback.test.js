@@ -100,10 +100,14 @@ test('install callback upserts enabled GitHub settings from selected repositorie
   const sentri = app.listen(0);
   const base = `http://127.0.0.1:${sentri.address().port}`;
   try {
-    const { token } = seedProject();
-    const state = await signInstallState('PRJ-GH');
+    seedProject();
+    // Callback is authenticated by the signed state JWT, NOT by the user
+    // cookie/Bearer (browsers don't send SameSite=Strict cookies on the
+    // cross-site redirect back from github.com — see route comment).
+    const state = await signInstallState('PRJ-GH', {
+      actor: { userId: 'USR-GH', userName: 'GitHub Admin' },
+    });
     const out = await request(base, `/api/v1/integrations/github/install/callback?installation_id=99&setup_action=install&state=${encodeURIComponent(state)}`, {
-      token,
       headers: { Accept: 'application/json' },
     });
     assert.equal(out.res.status, 200, out.json.error);
