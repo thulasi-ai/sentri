@@ -81,6 +81,44 @@ POST /api/v1/projects/:id/run
 
 Executes all approved tests for the project. Returns a run ID.
 
+
+## GitHub App Integration
+
+### Start GitHub App Install
+
+```
+GET /api/v1/integrations/github/install/start/:projectId
+```
+
+**Auth:** admin JWT. Returns a GitHub App installation URL containing a 10-minute, one-shot `state` token bound to the project. The Settings Integrations tab redirects admins to this URL; operators no longer need to paste numeric installation IDs manually.
+
+**Response:**
+```json
+{ "url": "https://github.com/apps/sentri/installations/new?state=..." }
+```
+
+### GitHub App Install Callback
+
+```
+GET /api/v1/integrations/github/install/callback?installation_id=<id>&setup_action=install&state=<jwt>
+```
+
+**Auth:** admin JWT (browser cookie or bearer token). Verifies the signed one-shot `state`, fetches the repositories selected for the installation, then enables PR checks for the bound project with the first selected `owner/repo` and the returned `installation_id`. Browser requests redirect back to Settings; API clients that send `Accept: application/json` receive the updated settings payload.
+
+### GitHub App Webhook `[no-ui]`
+
+```
+POST /api/v1/integrations/github/app-webhook
+```
+
+**Auth:** GitHub HMAC only — `X-Hub-Signature-256` using `GITHUB_WEBHOOK_SECRET` over the raw request body. This endpoint is machine-only because App-level lifecycle events do not carry a project trigger token.
+
+Handled events:
+
+- `installation.deleted` disables every `github_check_settings` row matching the installation and logs `integration.github.disabled` per affected project.
+- `installation_repositories.removed` disables only rows matching the removed `owner/repo` values for the installation.
+- `installation.created`, `installation.suspend`, and `installation.unsuspend` are logged for existing rows and otherwise leave settings unchanged; admins explicitly re-enable projects from Settings.
+
 ## CI/CD Trigger
 
 ```

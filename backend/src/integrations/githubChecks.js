@@ -4,11 +4,14 @@
  */
 
 import crypto from "node:crypto";
+import { signJwt, verifyJwt, getJwtSecret } from "../middleware/authenticate.js";
+import { redis, isRedisAvailable } from "../utils/redisClient.js";
 
 const CHECK_NAME = process.env.GITHUB_CHECK_NAME || "Sentri QA";
-const API_BASE = process.env.GITHUB_API_BASE || "https://api.github.com";
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const tokenCache = new Map();
+const installStateCache = new Map();
+const INSTALL_STATE_TTL_SEC = 600;
 
 function base64url(input) {
   return Buffer.from(input).toString("base64url");
@@ -55,7 +58,8 @@ function retryAfterMs(res) {
 async function githubFetch(path, { method = "GET", token, body, fetchImpl = fetch } = {}) {
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const res = await fetchImpl(`${API_BASE}${path}`, {
+    const apiBase = process.env.GITHUB_API_BASE || "https://api.github.com";
+    const res = await fetchImpl(`${apiBase}${path}`, {
       method,
       headers: {
         "Accept": "application/vnd.github+json",
@@ -88,6 +92,14 @@ export function clearInstallationTokenCache() {
 }
 
 /**
+ * Clear cached one-shot GitHub install state nonces. Intended for tests.
+ * @returns {void}
+ */
+export function clearInstallStateCache() {
+  installStateCache.clear();
+}
+
+/**
  * Return a cached GitHub App installation token, refreshing before expiry.
  *
  * @param {string|number} installationId
@@ -115,10 +127,88 @@ export async function getInstallationToken(installationId, { fetchImpl = fetch }
   return data.token;
 }
 
+
+function installStateKey(nonce) {
+  return `github-install-state:${nonce}`;
+}
+
+async function storeInstallNonce(nonce, ttlSec) {
+  if (isRedisAvailable() && redis) {
+    await redis.set(installStateKey(nonce), "1", "EX", ttlSec, "NX");
+    return;
+  }
+  installStateCache.set(nonce, Date.now() + ttlSec * 1000);
+}
+
+async function claimInstallNonce(nonce) {
+  if (!nonce) return false;
+  if (isRedisAvailable() && redis) {
+    const removed = await redis.del(installStateKey(nonce));
+    return removed === 1;
+  }
+  const expiresAt = installStateCache.get(nonce);
+  installStateCache.delete(nonce);
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+/**
+ * Sign a short-lived, one-shot state token for the GitHub App install flow.
+ *
+ * @param {string} projectId
+ * @param {Object} [options]
+ * @param {number} [options.ttlSec=600]
+ * @returns {Promise<string>} Signed state JWT.
+ */
+export async function signInstallState(projectId, { ttlSec = INSTALL_STATE_TTL_SEC } = {}) {
+  if (!projectId) throw new Error("projectId is required");
+  const nonce = crypto.randomUUID();
+  await storeInstallNonce(nonce, ttlSec);
+  return signJwt({ projectId, nonce, purpose: "github-install" }, getJwtSecret(), ttlSec);
+}
+
+/**
+ * Verify and claim a GitHub App install state token.
+ *
+ * @param {string} token
+ * @returns {Promise<{projectId: string}|null>} Decoded project binding, or null.
+ */
+export async function verifyInstallState(token) {
+  const payload = verifyJwt(token, getJwtSecret());
+  if (!payload || payload.purpose !== "github-install" || !payload.projectId || !payload.nonce) return null;
+  if (!await claimInstallNonce(payload.nonce)) return null;
+  return { projectId: payload.projectId };
+}
+
 function parseRepo(repo) {
   const [owner, name] = String(repo || "").split("/");
   if (!owner || !name) throw new Error("GitHub repo must be in owner/name format");
   return { owner, name };
+}
+
+/**
+ * List repositories selected for a GitHub App installation.
+ *
+ * @param {string|number} installationId
+ * @param {Object} [options]
+ * @param {Function} [options.fetchImpl]
+ * @returns {Promise<string[]>} Repository names in `owner/name` format.
+ */
+export async function getInstallationRepos(installationId, options = {}) {
+  const token = await getInstallationToken(installationId, options);
+  const fetchImpl = options.fetchImpl || fetch;
+  const repos = [];
+  let page = 1;
+  while (page <= 10) {
+    const data = await githubFetch(`/installation/repositories?per_page=100&page=${page}`, {
+      token,
+      fetchImpl,
+    });
+    const batch = Array.isArray(data?.repositories) ? data.repositories : [];
+    repos.push(...batch.map((repo) => repo.full_name).filter(Boolean));
+    if (batch.length < 100) break;
+    page++;
+  }
+  return repos;
 }
 
 /**
