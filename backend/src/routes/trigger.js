@@ -160,7 +160,12 @@ function buildTestRun({
       testName: t.name,
       status: "skipped",
       skipReason: "skipped_no_impact",
-      riskScore: t.riskScore,
+      // AUTO-004: `impactSkipped` is sourced from the raw approved-tests
+      // array (no `riskScore` attached). Look up the score from the
+      // risk-ordered queue when available so persisted skip rows mirror
+      // the budget-skipped shape; fall back to `null` to keep the column
+      // present rather than `undefined` (which JSON-drops the field).
+      riskScore: lookup.get(t.id) ?? null,
     })),
     ...budgetSkipped.map((t) => ({
       testId: t.id,
@@ -459,6 +464,20 @@ async function handleTrigger(req, res) {
     }
   }
 
+  // ── 3c. Resolve git-diff changed files (async) ───────────────────────
+  // AUTO-004: `resolveChangedFiles` may hit the GitHub PR Files API, which
+  // is an async network call. It MUST happen BEFORE the synchronous
+  // concurrent-run guard below — same TOCTOU rationale as the callbackUrl
+  // / previewUrl validation above. An await between the guard and
+  // `runRepo.create()` would yield the event loop and let a second
+  // concurrent request slip past the guard, creating duplicate runs.
+  const triggerCrawl = req.body?.triggerCrawl === true;
+  const previewUrl = typeof req.body?.previewUrl === "string" ? req.body.previewUrl : null;
+  const runId = generateRunId();
+  const { changedFiles, fallbackReason: changedFilesFallback } = triggerCrawl
+    ? { changedFiles: null, fallbackReason: "crawl_run" }
+    : await resolveChangedFiles(project, req.body || {}, runId);
+
   // ── 4. Guard: no concurrent run ───────────────────────────────────────
   // From here to runRepo.create() the code is fully synchronous, so no
   // other request can interleave and pass the same guard.
@@ -470,9 +489,6 @@ async function handleTrigger(req, res) {
     });
   }
 
-  const triggerCrawl = req.body?.triggerCrawl === true;
-  const previewUrl = typeof req.body?.previewUrl === "string" ? req.body.previewUrl : null;
-  const runId = generateRunId();
   const allTests = testRepo.getByProjectId(project.id);
   const tests = allTests.filter((t) => t.reviewStatus === "approved");
   // AUTO-001: risk-ordered + budget-capped dispatch set. `tests` (approved order)
@@ -492,9 +508,6 @@ async function handleTrigger(req, res) {
   const latestCrawl = runRepo.getLatestCrawlWithChangedPages(project.id);
   const changedPages = (latestCrawl?.changedPages || []).map((p) => p?.url || p).filter(Boolean);
   const safeBudget = normalizeBudgetMinutes(budgetMinutes);
-  const { changedFiles, fallbackReason: changedFilesFallback } = triggerCrawl
-    ? { changedFiles: null, fallbackReason: "crawl_run" }
-    : await resolveChangedFiles(project, req.body || {}, runId);
   const routeMap = req.body?.routeMap && typeof req.body.routeMap === "object" && !Array.isArray(req.body.routeMap)
     ? req.body.routeMap
     : {};
