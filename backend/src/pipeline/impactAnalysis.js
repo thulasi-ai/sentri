@@ -5,7 +5,12 @@
 
 const ROUTE_FILE_EXT_RE = /\.(jsx?|tsx?|vue|svelte|astro)$/i;
 const NON_ROUTE_FILE_RE = new RegExp(
-  String.raw`(^|/)(docs?|migrations?|config|scripts?|tests?|__tests__|components?)(/|$)`
+  // Folders that never produce user-facing routes. `backend|server|api` excludes
+  // Node server code in monorepos (e.g. `backend/src/routes/trigger.js`) which
+  // otherwise hits the `routes` anchor below and emits a bogus `/trigger`
+  // prefix. Frontend-ish frameworks that use `pages/api/` for serverless
+  // handlers (Next.js) should rely on the `routeMap` override.
+  String.raw`(^|/)(docs?|migrations?|config|scripts?|tests?|__tests__|components?|backend|server|api)(/|$)`
     + String.raw`|(^|/)(package(-lock)?\.json|vite\.config\.|webpack\.config\.|rollup\.config\.|eslint\.|prettier\.)`,
   "i",
 );
@@ -43,7 +48,15 @@ function expandRouteMap(routeMap, file) {
   const out = [];
   for (const [pattern, urls] of Object.entries(routeMap)) {
     const p = String(pattern || "");
-    const matches = file === p || file.startsWith(p.endsWith("/") ? p : `${p}/`) || file.includes(p);
+    if (!p) continue;
+    // Match strategy: exact path equality OR path-prefix on a `/`-boundary.
+    // The earlier `file.includes(p)` clause silently widened scope — a key
+    // like `"app"` matched every path containing the substring `app`
+    // (e.g. `backend/src/middleware/appSetup.js`), and `"src"` matched the
+    // whole repo. Drop substring matching and require an explicit path
+    // boundary so routeMap entries behave as scoped overrides.
+    const prefix = p.endsWith("/") ? p : `${p}/`;
+    const matches = file === p || file.startsWith(prefix);
     if (!matches) continue;
     const list = Array.isArray(urls) ? urls : [urls];
     out.push(...list.map(normalizePathname).filter(Boolean));

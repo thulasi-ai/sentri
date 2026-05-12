@@ -62,6 +62,34 @@ test("GitHub PR-files fetch failure is represented as full-suite fallback", () =
   assert.equal(impact.fallbackReason, "no_changed_files");
 });
 
+test("routeMap entries match on path boundary, not substring", () => {
+  // Regression: an earlier `file.includes(pattern)` branch made a routeMap
+  // key like `"app"` match every path containing the substring `app` (e.g.
+  // `backend/src/middleware/appSetup.js`). With path-boundary matching, the
+  // key only matches a file at-or-under that path.
+  const impact = computeImpactedTests({
+    tests,
+    changedFiles: ["backend/src/middleware/appSetup.js"],
+    routeMap: { app: ["/account"] },
+  });
+  assert.deepEqual(impact.impactedTestIds, []);
+  assert.equal(impact.fallbackReason, "no_impact");
+});
+
+test("backend route files do not produce frontend route prefixes", () => {
+  // Regression: the route-prefix heuristic anchors on `src|app|pages|routes`,
+  // which previously matched backend Express routers (e.g.
+  // `backend/src/routes/trigger.js` → bogus `/trigger` prefix). The
+  // NON_ROUTE_FILE_RE now excludes `backend|server|api` folders so
+  // server-side files don't pollute the impacted set.
+  const impact = computeImpactedTests({
+    tests: [...tests, { id: "trigger", name: "Trigger", sourceUrl: "https://app.example.com/trigger" }],
+    changedFiles: ["backend/src/routes/trigger.js"],
+  });
+  assert.ok(!impact.impactedTestIds.includes("trigger"));
+  assert.deepEqual(routePrefixesForChangedFiles(["backend/src/routes/trigger.js"]), []);
+});
+
 test("changedFiles add a file-affinity risk boost that composes with changedPages", () => {
   const subject = { id: "checkout", sourceUrl: "https://app.example.com/checkout/cart" };
   const base = scoreTestRisk(subject, []);
