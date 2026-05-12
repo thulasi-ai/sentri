@@ -168,6 +168,16 @@ async function claimInstallNonce(nonce) {
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
 
+async function peekInstallNonce(nonce) {
+  if (!nonce) return false;
+  if (isRedisAvailable() && redis) {
+    const exists = await redis.exists(installStateKey(nonce));
+    return exists === 1;
+  }
+  const expiresAt = installStateCache.get(nonce);
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
 /**
  * Sign a short-lived, one-shot state token for the GitHub App install flow.
  *
@@ -206,20 +216,48 @@ export async function signInstallState(projectId, { ttlSec = INSTALL_STATE_TTL_S
 }
 
 /**
- * Verify and claim a GitHub App install state token.
+ * Verify a GitHub App install state token.
+ *
+ * By default the nonce is claimed (consumed) on verification — the token is
+ * one-shot. Callers that need to perform fallible work (e.g. GitHub API
+ * calls) between verification and final acceptance can pass `{ claim: false }`
+ * to defer consumption and then call `claimInstallState(nonce)` after the
+ * fallible work succeeds; this prevents a transient upstream failure from
+ * permanently spending the state JWT and forcing the user to restart the
+ * entire install flow.
  *
  * @param {string} token
- * @returns {Promise<{projectId: string, actorId: string|null, actorName: string|null}|null>}
+ * @param {Object} [options]
+ * @param {boolean} [options.claim=true] When false, the nonce is left in
+ *   place; the caller is responsible for calling `claimInstallState(nonce)`.
+ * @returns {Promise<{projectId: string, nonce: string, actorId: string|null, actorName: string|null}|null>}
  */
-export async function verifyInstallState(token) {
+export async function verifyInstallState(token, { claim = true } = {}) {
   const payload = verifyJwt(token, getJwtSecret());
   if (!payload || payload.purpose !== "github-install" || !payload.projectId || !payload.nonce) return null;
-  if (!await claimInstallNonce(payload.nonce)) return null;
+  if (claim) {
+    if (!await claimInstallNonce(payload.nonce)) return null;
+  } else if (!await peekInstallNonce(payload.nonce)) {
+    return null;
+  }
   return {
     projectId: payload.projectId,
+    nonce: payload.nonce,
     actorId: payload.actorId || null,
     actorName: payload.actorName || null,
   };
+}
+
+/**
+ * Claim (consume) a previously-verified install-state nonce. Used by callers
+ * that passed `{ claim: false }` to `verifyInstallState` and have now
+ * completed their fallible work.
+ *
+ * @param {string} nonce
+ * @returns {Promise<boolean>} True if the nonce was successfully claimed.
+ */
+export async function claimInstallState(nonce) {
+  return claimInstallNonce(nonce);
 }
 
 function parseRepo(repo) {

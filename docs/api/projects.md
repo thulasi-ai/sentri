@@ -103,7 +103,7 @@ GET /api/v1/integrations/github/install/start/:projectId
 GET /api/v1/integrations/github/install/callback?installation_id=<id>&setup_action=install&state=<jwt>
 ```
 
-**Auth:** admin JWT (browser cookie or bearer token). Verifies the signed one-shot `state`, fetches the repositories selected for the installation, then enables PR checks for the bound project with the first selected `owner/repo` and the returned `installation_id`. Browser requests redirect back to Settings; API clients that send `Accept: application/json` receive the updated settings payload.
+**Auth:** Signed one-shot `state` JWT (issued by `GET /install/start/:projectId` to authenticated admins). No browser cookie or Bearer token is required — and would not work, because GitHub's cross-site redirect does not carry `SameSite=Strict` cookies. The state token is nonce-tracked (replay-proof), signed with `JWT_SECRET` (unforgeable), and binds a specific project + originating admin captured at `/install/start`. Verifies the state, fetches the repositories selected for the installation, then enables PR checks for the bound project with the first selected `owner/repo` and the returned `installation_id`. Browser requests redirect back to Settings; API clients that send `Accept: application/json` receive the updated settings payload.
 
 ### GitHub App Webhook `[no-ui]`
 

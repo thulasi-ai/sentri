@@ -14,6 +14,7 @@ import { logActivity } from "../../utils/activityLogger.js";
 import * as projectRepo from "../../database/repositories/projectRepo.js";
 import * as githubCheckSettingsRepo from "../../database/repositories/githubCheckSettingsRepo.js";
 import {
+  claimInstallState,
   getInstallationRepos,
   signInstallState,
   verifyInstallState,
@@ -103,7 +104,12 @@ router.get("/install/callback", async (req, res) => {
   if (!installationId || !state) return res.status(400).json({ error: "installation_id and state are required" });
   if (setupAction && !INSTALL_ACTIONS.has(setupAction)) return res.status(400).json({ error: "unsupported setup_action" });
 
-  const verified = await verifyInstallState(state);
+  // Verify the state JWT WITHOUT consuming the nonce — we still need to make
+  // a fallible GitHub API call (`getInstallationRepos`) before committing.
+  // If that call fails (transient 5xx after retries, network timeout, …) the
+  // nonce remains intact so the user can refresh and retry rather than being
+  // forced to restart the entire install flow from Settings.
+  const verified = await verifyInstallState(state, { claim: false });
   if (!verified) return res.status(400).json({ error: "invalid or expired install state" });
 
   // Workspace scoping is implicit: the state JWT was issued only after an
@@ -113,9 +119,32 @@ router.get("/install/callback", async (req, res) => {
   const project = projectRepo.getById(verified.projectId);
   if (!project) return res.status(404).json({ error: "Project not found" });
 
-  const repos = await getInstallationRepos(installationId);
+  let repos;
+  try {
+    repos = await getInstallationRepos(installationId);
+  } catch (err) {
+    // GitHub API failed (transient 5xx, rate-limit, network). Leave the
+    // nonce intact so a refresh of this callback URL can retry cleanly.
+    const message = err?.message || "Failed to fetch installation repositories";
+    if (wantsJson(req)) return res.status(502).json({ error: message });
+    return res.redirect(302, frontendSettingsUrl({ github: "error", reason: "github_api_failed", projectId: project.id }));
+  }
   const repo = repos[0] || "";
-  if (!repo) return res.status(400).json({ error: "No repositories were selected for this GitHub App installation" });
+  if (!repo) {
+    // No repos selected — the install completed but the user didn't grant
+    // access to any repository. Consume the nonce (this isn't retryable
+    // without re-running the GitHub install flow) and surface the error.
+    await claimInstallState(verified.nonce);
+    if (wantsJson(req)) return res.status(400).json({ error: "No repositories were selected for this GitHub App installation" });
+    return res.redirect(302, frontendSettingsUrl({ github: "error", reason: "no_repos", projectId: project.id }));
+  }
+
+  // Fallible work succeeded — claim the nonce so the state JWT is now
+  // one-shot. If the claim itself fails (another concurrent callback won
+  // the race) bail out without writing settings.
+  if (!await claimInstallState(verified.nonce)) {
+    return res.status(400).json({ error: "invalid or expired install state" });
+  }
 
   const existing = githubCheckSettingsRepo.getByProjectId(project.id);
   const now = new Date().toISOString();

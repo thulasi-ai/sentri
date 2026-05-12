@@ -74,7 +74,11 @@ test('state JWT validates once, rejects tampering, expiry, and replay', async ()
   process.env.JWT_SECRET = 'test-jwt-secret-for-github-install-state';
   clearInstallStateCache();
   const state = await signInstallState('PRJ-GH');
-  assert.deepEqual(await verifyInstallState(state), { projectId: 'PRJ-GH', actorId: null, actorName: null });
+  const verified = await verifyInstallState(state);
+  assert.equal(verified?.projectId, 'PRJ-GH');
+  assert.equal(verified?.actorId, null);
+  assert.equal(verified?.actorName, null);
+  assert.equal(typeof verified?.nonce, 'string');
   assert.equal(await verifyInstallState(state), null, 'state token must be one-shot');
 
   const tampered = `${state.slice(0, -1)}x`;
