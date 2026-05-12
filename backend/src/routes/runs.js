@@ -167,9 +167,9 @@ router.post("/projects/:id/run", requireRole("qa_lead"), demoQuota("run"), expen
   // History is bounded to the 20 most recent completed test runs via the lean
   // accessor `getRecentCompletedWithResults` (id/type/status/startedAt/results
   // only — no testQueue/promptAudit/qualityAnalytics blobs). The scorer caps
-  // its per-test window at the last 10 results anyway (`riskScorer.js`
-  // `rows.slice(-10)`), so 20 runs gives ample headroom while keeping memory
-  // bounded on projects with hundreds of historical runs.
+  // its per-test window at the 10 newest results anyway (`riskScorer.js`
+  // `rows.slice(0, 10)` — newest-first), so 20 runs gives ample headroom
+  // while keeping memory bounded on projects with hundreds of historical runs.
   const RISK_HISTORY_RUN_LIMIT = 20;
   const recentRuns = runRepo.getRecentCompletedWithResults(project.id, RISK_HISTORY_RUN_LIMIT);
   const history = recentRuns.flatMap((r) => Array.isArray(r.results) ? r.results : []);
