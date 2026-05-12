@@ -31,8 +31,12 @@ function wantsJson(req) {
 
 function frontendSettingsUrl(params = {}) {
   const base = process.env.APP_URL || process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL || "/";
+  // Respect `APP_BASE_PATH` for non-root deployments (e.g. `/sentri` for
+  // GitHub Pages hosting). Mirrors the pattern in `utils/notifications.js`,
+  // `utils/emailSender.js`, and `routes/auth.js`.
+  const basePath = (process.env.APP_BASE_PATH || "/").replace(/\/$/, "");
   const url = new URL(base, "http://sentri.local");
-  url.pathname = "/settings";
+  url.pathname = `${basePath}/settings`;
   url.search = new URLSearchParams({ tab: "integrations", ...params }).toString();
   if (base.startsWith("/")) return `${url.pathname}${url.search}`;
   return url.toString();
