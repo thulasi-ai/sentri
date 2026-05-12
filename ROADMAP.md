@@ -1241,7 +1241,7 @@ Workaround today is to set `BROWSER_HEADLESS=false` (per `REVIEW.md:154-156`). L
 | Access Control | 2 | 2 | 0 | 0 | — |
 | Platform Features | 7 | 4 | 0 | 3 | FEA-004 (per-tenant quotas), FEA-005 (collaboration/comments), FEA-006 (template gallery) |
 | Differentiators | 22 | 16 | 0 | 6 | DIF-002c, 008, 009, 010, 012, 015c (sub-gaps 2–6) |
-| Autonomous Intelligence | 29 | 17 | 0 | 12 | AUTO-004/008–011/014/018/021/022 🔴 (eval harness)/023 (DAG runner)/024 (critic)/025 (healing loop) (AUTO-020 superseded by AUTO-015) |
+| Autonomous Intelligence | 29 | 18 | 0 | 11 | AUTO-008–011/014/018/021/022 🔴 (eval harness)/023 (DAG runner)/024 (critic)/025 (healing loop) (AUTO-020 superseded by AUTO-015) |
 | Capabilities | 4 | 2 | 0 | 2 | CAP-001 (data-driven testing), CAP-002 (test sharding) |
 | Process automation | 1 | 1 | 0 | 0 | — |
 | Maintenance | 17 | 5 | 0 | 12 | MNT-001/002/003 (narrowed)/004/005/008/012/013/014/015/016/017 |
