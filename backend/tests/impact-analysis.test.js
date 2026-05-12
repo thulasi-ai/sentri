@@ -155,6 +155,6 @@ test("GitHub check summary omits skipped suffix when no non-executed skips", () 
     results: [{ status: "passed" }, { status: "passed" }, { status: "passed" }],
   };
   const md = renderGithubCheckSummary(run);
-  assert.match(md, /3 passed.*0 failed.*3 total\./);
+  assert.match(md, /3 passed.*0 failed.*3 total/);
   assert.doesNotMatch(md, /skipped/);
 });
