@@ -181,9 +181,11 @@ async function claimInstallNonce(nonce) {
  * @param {string} projectId
  * @param {Object} [options]
  * @param {number} [options.ttlSec=600]
- * @param {{ userId?: string, userName?: string }} [options.actor]
+ * @param {Object} [options.actor]
  *   Optional authenticated user metadata captured at sign-time so the
  *   callback can attribute the activity log entry.
+ * @param {string} [options.actor.userId]
+ * @param {string} [options.actor.userName]
  * @returns {Promise<string>} Signed state JWT.
  */
 export async function signInstallState(projectId, { ttlSec = INSTALL_STATE_TTL_SEC, actor = {} } = {}) {
