@@ -122,7 +122,13 @@ export function computeImpactedTests({ tests, changedFiles, changedPages = [], r
   }
 
   const routePrefixes = routePrefixesForChangedFiles(fileList, routeMap);
-  if (routePrefixes.length === 0) {
+  // Early-return only when BOTH signals are empty. The crawl-diff signal from
+  // AUTO-002 (`pagePrefixes`) is an independent source of impact — a CI
+  // trigger with `changedFiles: ["styles/global.css"]` (no route-mappable
+  // files) but a known `/account` page change from a prior crawl should still
+  // run the `/account` tests. Returning `no_impact` here without consulting
+  // `pagePrefixes` silently drops that signal.
+  if (routePrefixes.length === 0 && pagePrefixes.length === 0) {
     return { impactedTestIds: [], fallbackReason: "no_impact", routePrefixes };
   }
   const combinedPrefixes = [...new Set([...routePrefixes, ...pagePrefixes])];
