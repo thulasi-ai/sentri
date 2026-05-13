@@ -10,6 +10,7 @@
  */
 
 import { routePrefixesForChangedFiles } from "./impactAnalysis.js";
+import { isNonExecutedSkip } from "../utils/skipReasons.js";
 
 /** Server-side cap on the `budgetMinutes` request param to bound worker pool exposure. */
 export const MAX_BUDGET_MINUTES = 240;
@@ -50,16 +51,19 @@ export function isSmokeTest(test) {
  */
 export function scoreTestRisk(test, runHistory = [], { now = Date.now(), changedPages = [], changedFiles = [], routeMap = {} } = {}) {
   let score = 0;
-  // Exclude *all* skipped rows from the history: a skip reflects a dispatch
-  // decision (the test never ran), not an execution outcome. Counting any
-  // skip kind — `over_budget` (AUTO-001) or `skipped_no_impact` (AUTO-004) —
-  // as a failure would give a previously skipped test a near-maximum risk
-  // score on the next run and corrupt the ranking across runs. Broadened
-  // from the original `over_budget`-only filter in AUTO-004 so the new
-  // `skipped_no_impact` rows persisted on the run record receive the same
-  // treatment.
+  // Exclude dispatch-time skipped rows from the history: a skip reflects a
+  // dispatch decision (the test never ran), not an execution outcome.
+  // Counting any non-executed skip kind — `over_budget` (AUTO-001) or
+  // `skipped_no_impact` (AUTO-004) — as a failure would give a previously
+  // skipped test a near-maximum risk score on the next run and corrupt the
+  // ranking across runs. Routed through `isNonExecutedSkip`
+  // (`backend/src/utils/skipReasons.js`) — the same predicate used by
+  // `testRunner.js`, `runResultFormatters.js`, and `runWorker.js` — so a
+  // future skip kind that DOES represent an execution outcome (e.g. a
+  // planned `dependency_failed` reason) automatically counts here without a
+  // fourth site edit.
   const rows = runHistory.filter(
-    (r) => r?.testId === test.id && r.status !== "skipped",
+    (r) => r?.testId === test.id && !isNonExecutedSkip(r),
   );
   // Newest-first window: take the head, not the tail. The previous
   // `slice(-10)` + `at(-1)` shape silently inverted the bonus — a test that
